@@ -203,6 +203,7 @@ class BertPooler(nn.Module):
     def forward(self, hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
+        # [bs,seq_len,hidden_size] -> [bs,hidden_size]
         first_token_tensor = hidden_states[:, 0]
         pooled_output = self.dense(first_token_tensor)
         pooled_output = self.activation(pooled_output)
@@ -219,9 +220,7 @@ class BertModel(nn.Module):
         # 主干网络
         # TODO: Encoder 和 Decoder 可以统一为包含多个TransformerLayer的TransformerBlock
         self.encoder = BertEncoder(config)
-        # TODO: 补充后处理阶段
-        if False:
-            self.pooler = BertPooler(config)
+        self.pooler = BertPooler(config)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
         if attention_mask is None:
@@ -250,9 +249,7 @@ class BertModel(nn.Module):
                                       output_all_encoded_layers=output_all_encoded_layers)
         # encoder的最终输出结果
         sequence_output = encoded_layers[-1]
-        # TODO: 采用预处理结果
-        if False:
-            pooled_output = self.pooler(sequence_output)
+        pooled_output = self.pooler(sequence_output)
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
-        return encoded_layers, sequence_output
+        return encoded_layers, pooled_output

@@ -21,28 +21,34 @@ class BertConfig():
             "dataset/THUCNews/data/class.txt").readlines()]                                # 类别名单
         self.num_classes = len(self.class_list)                         # 类别数
 
-        ''' Distributed Configuration '''
-
         ''' Bert Configuration '''
+        # 模型参数
         self.attention_probs_dropout_prob = 0.1
         self.directionality = "bidi"
         self.hidden_act = "gelu"
         self.hidden_dropout_prob = 0.1
-        self.hidden_size = 768
         self.initializer_range = 0.02
-        self.intermediate_size = 3072                               # MLP层两个dense层中间的intermediate state大小
         self.layer_norm_eps = 1e-12
         self.max_position_embeddings = 512
         self.model_type = "bert"
+        self.pad_token_id = 0
+
+        # 修改模型大小
+        self.hidden_size = 768
+        self.intermediate_size = 4*self.hidden_size                # MLP层两个dense层中间的intermediate state大小
         self.num_attention_heads = 12
         self.num_hidden_layers = 12
-        self.pad_token_id = 0
-        self.pooler_fc_size = 768
-        self.pooler_num_attention_heads = 12
-        self.pooler_num_fc_layers =  3
-        self.pooler_size_per_head = 128
-        self.pooler_type = "first_token_transform"
+        self.att_head_size = int(self.hidden_size/self.num_attention_heads)
+
+        # 词表
         self.type_vocab_size = 2
         self.vocab_size = 21128
+
+        ''' Distributed Configuration '''
+        self.init_method = "tcp://127.0.0.1:23000"                         # torch.dist.init_process_group中使用的master device    
+        self.distributed_backend = "gloo"
+        self.seq_scatter_list = [20,12]                              # 包含sequence被划分到每个设备上的长度
+        assert sum(self.seq_scatter_list) == self.pad_size      # 要求总和等于seq_len
+
 
 config = BertConfig()

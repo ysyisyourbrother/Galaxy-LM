@@ -3,15 +3,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 
-from pretrain_config.bert_config import config
+# TODO 将不同pretrain的config分离
+from pretrain_config.sp_bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
-import galaxy.models.bert.bert_model as bert_model
+import galaxy.models.bert.sp_bert_model as sp_bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
+from galaxy.initialize import initialize_galaxy
 
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
-        self.bert = bert_model.BertModel(config)
+        self.bert = sp_bert_model.SPBertModel(config)
         # self.bert = BertModel.from_pretrained(config.bert_path)
         for param in self.bert.parameters():
             param.requires_grad = True
@@ -28,6 +30,9 @@ class Model(nn.Module):
 
 
 if __name__ == '__main__':
+    # Initial Galaxy, args
+    initialize_galaxy(config)
+
     # Prapare Tokenizer
     tokenizer = BertTokenizer.from_pretrained(config.vocab_path)
 
@@ -46,7 +51,7 @@ if __name__ == '__main__':
 
     # Train
     model.train()
-    # TODO: 使用更合适的优化器
+    # TODO: 将优化器调整为分布式优化
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
     for i, (trains, labels) in enumerate(train_iter):
         outputs = model(trains)
@@ -55,5 +60,5 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
         
-        print("finish one iteration.")
+        print(f"finish {i} iteration.")
         break
