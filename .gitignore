@@ -2,6 +2,9 @@
 dataset/*
 !README.md
 
+# script
+sync.sh
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

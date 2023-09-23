@@ -17,6 +17,7 @@ def _initialize_distributed(config):
         world_size=args.world,
         rank=args.rank,
     )
+    print("Initialization of process group complete!")
 
     # 如果是混合并行，进一步初始化TP、SP和PP的group
     # ...
