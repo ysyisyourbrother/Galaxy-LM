@@ -16,7 +16,6 @@ class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
         self.bert = bert_model.BertModel(config)
-        # self.bert = BertModel.from_pretrained(config.bert_path)
         for param in self.bert.parameters():
             param.requires_grad = True
         # 最后用一个全连接层将提取到的特征转化为num_class个值
@@ -24,8 +23,8 @@ class Model(nn.Module):
 
     def forward(self, x):
         # 每一个input的维度：(token_ids, int(label), seq_len, mask)
-        context = x[0]  # 输入的句子
-        mask = x[2]  # 对padding部分进行mask，和句子一个size，padding部分用0表示，如：[1, 1, 1, 1, 0, 0]
+        context = x[0]
+        mask = x[2]
         _, pooled = self.bert(context, attention_mask=mask, output_all_encoded_layers=False)
         out = self.fc(pooled)
         return out
@@ -57,7 +56,7 @@ if __name__ == '__main__':
     ddp_model = DDP(model, device_ids=[0])
 
     # TODO: 使用更合适的优化器
-    optimizer = torch.optim.Adam(ddp_model.parameters(), lr=config.learning_rate)
+    optimizer = torch.optim.SGD(ddp_model.parameters(), lr=config.learning_rate)
     for i, (trains, labels) in enumerate(train_iter):
         outputs = ddp_model(trains)
         ddp_model.zero_grad()
