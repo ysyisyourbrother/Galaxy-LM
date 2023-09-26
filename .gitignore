@@ -5,6 +5,9 @@ dataset/*
 # script
 sync.sh
 
+# vscode
+.vscode
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
