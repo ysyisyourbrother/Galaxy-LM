@@ -48,17 +48,17 @@ class Parse:
         for label, temperature in temperatures:
             lookup_table[f'{label} Temperature (C)'] = float(temperature)
         return lookup_table
-
-    def parse_vdds(self, lookup_table, vdds):
-        for label, curr_vdd, avg_vdd in vdds:
-            lookup_table[f'Current {label} Power Consumption (mW)'] = float(curr_vdd)
-            lookup_table[f'Average {label} Power Consumption (mW)'] = float(avg_vdd)
-        return lookup_table
     
     def parse_poms(self, lookup_table, poms):
         for label, curr_pom, avg_pom in poms:
             lookup_table[f'Current {label}'] = float(curr_pom)
             lookup_table[f'Average {label}'] = float(avg_pom)
+        return lookup_table
+    
+    def parse_vdds(self, lookup_table, vdds):
+        for label, curr_vdd, avg_vdd in vdds:
+            lookup_table[f'Current {label}'] = float(curr_vdd)
+            lookup_table[f'Average {label}'] = float(avg_vdd)
         return lookup_table
 
     def parse_data(self, line):
@@ -98,5 +98,8 @@ class Parse:
         
         poms = re.findall(r'(POM_[A-Za-z0-9_]*_[A-Za-z0-9_]*) ([0-9]*)\/([0-9]*)', line)
         self.parse_poms(lookup_table, poms)
+
+        vdds = re.findall(r'(VDD_[A-Za-z0-9_]*) ([0-9]*)\/([0-9]*)', line)
+        self.parse_vdds(lookup_table, vdds)
 
         return lookup_table

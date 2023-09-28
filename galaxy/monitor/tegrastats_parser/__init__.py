@@ -40,6 +40,11 @@ class TegraMonitor():
                 lookup_table = self.parser.parse_data(line)
 
                 for key in lookup_table.keys():
+                    # Jetson Nano
                     if "Current POM" in key and "IN" in key:
                         total_power_consumption += lookup_table[key]
+                    # Jetson TX2 & NX
+                    elif "Current VDD" in key and "IN" in key:
+                        total_power_consumption += lookup_table[key]
+
         return total_power_consumption/counter, total_time

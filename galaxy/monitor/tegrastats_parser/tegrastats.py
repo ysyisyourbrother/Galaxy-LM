@@ -10,6 +10,8 @@ class Tegrastats:
     def start_tegrastats(self):
         # 需要sudo权限才可以获取power consumption
         # 可以编辑/etc/sudoers获得不用密码的sudo权限
+        # username ALL=(ALL) NOPASSWD: ALL
+        # Defaults timestamp_timeout=-1
         tegrastats_cmd = f"sudo tegrastats --interval {self.interval}"
         cmd = f"{{ echo $(date -u) & {tegrastats_cmd}; }} > {self.log_file}"
         self.process = subprocess.Popen(cmd, shell=True)
