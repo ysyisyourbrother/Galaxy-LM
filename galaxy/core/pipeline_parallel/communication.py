@@ -3,16 +3,13 @@
 两条任务队列中
 """
 
-
-import os
-from pydoc import Helper
 import threading
 import torch
 import torch.distributed as dist
-import sys
 
 from galaxy.core.pipeline_parallel import threadsafe_counter,threadsafe_queue
 from galaxy.core.pipeline_parallel import parallel_state
+from galaxy.global_vars import get_args
 
 
 class CommunicationHandler():
@@ -22,12 +19,14 @@ class CommunicationHandler():
         self.world_size = parallel_state.get_pipeline_parallel_world_size()
         self.next_rank = config.next_rank
         self.pre_rank = config.pre_rank
+        self.if_first_rank = (get_args().rank == 0)
+        self.if_last_rank = (get_args().rank == config.total_stage-1)
         self.tensor_tag = {"forward": 0, "backward": 1}
         self.tensor_shape = {"forward": (config.batch_size, config.pad_size, config.hidden_size), 
                              "backward": (config.batch_size, config.pad_size, config.hidden_size)}  
         self.setup_queue()
         # TODO 修改num_iterations值大小
-        self.start_helper_threads(num_iterations=10000)
+        self.start_helper_threads(num_iterations=1000)
 
     def setup_queue(self):
         """
@@ -43,32 +42,35 @@ class CommunicationHandler():
 
 
     def start_helper_threads(self, num_iterations):
-        # 启动 send forward helper thread 
-        self.start_helper_thread(func=send_helper_thread, 
-                                args=(self.forward_send_queues, 
-                                self.next_rank,
-                                num_iterations,
-                                self.tensor_tag["forward"]))
-        # 启动 send backward helper thread 
-        self.start_helper_thread(func=send_helper_thread, 
-                                 args=(self.backward_send_queues, 
-                                       self.pre_rank,
-                                       num_iterations,
-                                       self.tensor_tag["backward"]))
-        # 启动 recv forward helper thread 
-        self.start_helper_thread(func=recv_helper_thread, 
-                                 args=(self.forward_receive_queues, 
-                                       self.tensor_shape["forward"], 
-                                       self.pre_rank, 
-                                       num_iterations,
-                                       self.tensor_tag["forward"]))
-        # 启动 recv backward helper thread 
-        self.start_helper_thread(func=recv_helper_thread, 
-                                 args=(self.backward_receive_queues,
-                                       self.tensor_shape["backward"], 
-                                       self.next_rank, 
-                                       num_iterations,
-                                       self.tensor_tag["backward"]))
+         
+        if not self.if_first_rank:
+            # 启动 send backward helper thread 
+            self.start_helper_thread(func=send_helper_thread, 
+                                    args=(self.backward_send_queues, 
+                                        self.pre_rank,
+                                        num_iterations,
+                                        self.tensor_tag["backward"]))
+            # 启动 recv forward helper thread 
+            self.start_helper_thread(func=recv_helper_thread, 
+                                    args=(self.forward_receive_queues, 
+                                        self.tensor_shape["forward"], 
+                                        self.pre_rank, 
+                                        num_iterations,
+                                        self.tensor_tag["forward"]))
+        if not self.if_last_rank:
+            # 启动 send forward helper thread
+            self.start_helper_thread(func=send_helper_thread, 
+                                    args=(self.forward_send_queues, 
+                                    self.next_rank,
+                                    num_iterations,
+                                    self.tensor_tag["forward"]))
+            # 启动 recv backward helper thread 
+            self.start_helper_thread(func=recv_helper_thread, 
+                                    args=(self.backward_receive_queues,
+                                        self.tensor_shape["backward"], 
+                                        self.next_rank, 
+                                        num_iterations,
+                                        self.tensor_tag["backward"]))
 
 
     def start_helper_thread(self, func, args):
@@ -100,7 +102,7 @@ def recv_helper_thread(recv_queue, tensor_shape, src_rank, num_iterations, tag):
     """
     for i in range(num_iterations):
         tensor = _recv(tensor_shape, src_rank, tag)
-        print(f"recv tensor from {src_rank}")
+        print(f"recv tensor from {src_rank} ({tag}:{i}/{num_iterations})")
         recv_queue.add(tensor)
 
 
@@ -113,9 +115,8 @@ def send_helper_thread(send_queue, dst_rank, num_iterations, tag):
     for i in range(num_iterations):
         # 当send_queue为空时，队列阻塞
         tensor = send_queue.remove()
-        print(f"send tensor to {dst_rank}")
+        print(f"send tensor to {dst_rank} ({tag}:{i}/{num_iterations})")
         _send(tensor, dst_rank, tag)
-
 
 def _send(tensor, dst_rank, tag):
     tensor = tensor.cpu()
