@@ -10,7 +10,7 @@ def initialize_galaxy(config):
 
 def _initialize_distributed(config):
     args = get_args()
-
+    print("Initializing process group...")
     torch.distributed.init_process_group(
         backend=config.distributed_backend,
         init_method=config.init_method,
