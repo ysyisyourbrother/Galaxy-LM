@@ -3,7 +3,7 @@ import torch.nn as nn
 import math
 import copy
 from galaxy.models.bert.bert_model import gelu, swish
-from galaxy.models.bert.bert_model import BertLayerNorm, BertEmbeddings,BertPooler,BertMLP
+from galaxy.models.bert.bert_model import BertLayerNorm, BertEmbeddings,BertPooler,BertMLP,BertConnectLayer
 from galaxy.core.model_parallel.mappings import (
     copy_to_tensor_model_parallel_region,
     reduce_from_tensor_model_parallel_region,
@@ -109,18 +109,17 @@ class SPBertLayer(nn.Module):
         super(SPBertLayer, self).__init__()
         self.attention = SPBertAttention(config)
         self.mlp = BertMLP(config)
-        self.ln_1 = BertLayerNorm(config.hidden_size, eps=1e-12)
-        self.ln_2 = BertLayerNorm(config.hidden_size, eps=1e-12)
-        self.dropout_1 = nn.Dropout(config.hidden_dropout_prob)
-        self.dropout_2 = nn.Dropout(config.hidden_dropout_prob)
+        self.con1 = BertConnectLayer(config)
+        self.con2 = BertConnectLayer(config)
+
 
     def forward(self, hidden_states, attention_mask):
-        attention_output = self.attention(self.ln_1(hidden_states), attention_mask)
-        attention_output = hidden_states + self.dropout_1(hidden_states)
-        mlp_output = self.mlp(self.ln_2(attention_output))
-        layer_output = hidden_states + self.dropout_2(mlp_output)
-
+        attention_output = self.attention(  hidden_states , attention_mask)
+        connective_output = self.con1(hidden_states ,attention_output)
+        mlp_output = self.mlp(connective_output)
+        layer_output = self.con2(connective_output,mlp_output)
         return layer_output
+
 
 
 class SPBertEncoder(nn.Module):

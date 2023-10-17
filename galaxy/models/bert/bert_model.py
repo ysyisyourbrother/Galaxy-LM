@@ -153,23 +153,34 @@ class BertMLP(nn.Module):
     def forward(self, hidden_states):
         return self.dense2(self.dropout(self.activation(self.dense1(hidden_states))))
 
-
+class BertConnectLayer(nn.Module):
+    '''Connective Block: Dropout + Add + Layernorm  '''
+    def __init__(self, config):
+        super(BertConnectLayer, self).__init__()
+        self.ln = BertLayerNorm(config.hidden_size, eps=1e-12)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+    def forward(self, input, hidden_states):
+        hidden_states =  self.dropout(hidden_states)
+        hidden_states = self.ln(hidden_states + input)
+        return hidden_states
+        
+        
 class BertLayer(nn.Module):
+    '''
+    Attention --> Connective Block --> MLP --> Connective Block
+    '''
     def __init__(self, config):
         super(BertLayer, self).__init__()
         self.attention = BertMultiAttention(config)
         self.mlp = BertMLP(config)
-        self.ln_1 = BertLayerNorm(config.hidden_size, eps=1e-12)
-        self.ln_2 = BertLayerNorm(config.hidden_size, eps=1e-12)
-        self.dropout_1 = nn.Dropout(config.hidden_dropout_prob)
-        self.dropout_2 = nn.Dropout(config.hidden_dropout_prob)
+        self.con1 = BertConnectLayer(config)
+        self.con2 = BertConnectLayer(config)
 
     def forward(self, hidden_states, attention_mask):
-        attention_output = self.attention(self.ln_1(hidden_states), attention_mask)
-        attention_output = hidden_states + self.dropout_1(hidden_states)
-        mlp_output = self.mlp(self.ln_2(attention_output))
-        layer_output = hidden_states + self.dropout_2(mlp_output)
-
+        attention_output = self.attention(  hidden_states , attention_mask)
+        connective_output = self.con1(hidden_states ,attention_output)
+        mlp_output = self.mlp(connective_output)
+        layer_output =  self.con2(connective_output,mlp_output)
         return layer_output
 
 
@@ -209,6 +220,7 @@ class BertPooler(nn.Module):
         pooled_output = self.activation(pooled_output)
         return pooled_output
 
+    
 
 class BertModel(nn.Module):
     def __init__(self, config):
