@@ -2,69 +2,12 @@ import torch
 import torch.nn as nn
 import math
 import copy
-
+from galaxy.models.bert.bert_model import gelu, swish
+from galaxy.models.bert.bert_model import BertLayerNorm, BertEmbeddings,BertPooler
 from galaxy.core.model_parallel.mappings import (
     copy_to_tensor_model_parallel_region,
     reduce_from_tensor_model_parallel_region
 )
-
-
-def gelu(x):
-    """Implementation of the gelu activation function.
-        For information: OpenAI GPT's gelu is slightly different (and gives slightly different results):
-        0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
-        Also see https://arxiv.org/abs/1606.08415
-    """
-    return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
-
-
-def swish(x):
-    return x * torch.sigmoid(x)
-
-
-class TPBertLayerNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-12):
-        super(TPBertLayerNorm, self).__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.bias = nn.Parameter(torch.zeros(hidden_size))
-        self.variance_epsilon = eps
-
-    def forward(self, x):
-        u = x.mean(-1, keepdim=True)
-        s = (x - u).pow(2).mean(-1, keepdim=True)
-        x = (x - u) / torch.sqrt(s + self.variance_epsilon)
-        return self.weight * x + self.bias
-
-
-class TPBertEmbeddings(nn.Module):
-    """Construct the embeddings from word, position and token_type embeddings.
-    """
-    def __init__(self, config):
-        super(TPBertEmbeddings, self).__init__()
-        # Bert 原文中采用了三种Embeddings组合方式：Word embeddings+Position embedding+Token type embedding
-        self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
-        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
-        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
-
-        self.LayerNorm = TPBertLayerNorm(config.hidden_size, eps=1e-12)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-
-    def forward(self, input_ids, token_type_ids=None):
-        seq_length = input_ids.size(1)
-        position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
-        position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
-        if token_type_ids is None:
-            token_type_ids = torch.zeros_like(input_ids)
-
-        words_embeddings = self.word_embeddings(input_ids)
-        position_embeddings = self.position_embeddings(position_ids)
-        token_type_embeddings = self.token_type_embeddings(token_type_ids)
-
-        embeddings = words_embeddings + position_embeddings + token_type_embeddings
-        embeddings = self.LayerNorm(embeddings)
-        embeddings = self.dropout(embeddings)
-        return embeddings
-
 
 class TPBertAttention(nn.Module):
     def __init__(self, config):
@@ -177,8 +120,8 @@ class TPBertLayer(nn.Module):
         super(TPBertLayer, self).__init__()
         self.attention = TPBertAttention(config)
         self.mlp = TPBertMLP(config)
-        self.ln_1 = TPBertLayerNorm(config.hidden_size, eps=1e-12)
-        self.ln_2 = TPBertLayerNorm(config.hidden_size, eps=1e-12)
+        self.ln_1 = BertLayerNorm(config.hidden_size, eps=1e-12)
+        self.ln_2 = BertLayerNorm(config.hidden_size, eps=1e-12)
         self.dropout_1 = nn.Dropout(config.hidden_dropout_prob)
         self.dropout_2 = nn.Dropout(config.hidden_dropout_prob)
 
@@ -213,33 +156,17 @@ class TPBertEncoder(nn.Module):
         return all_encoder_layers
 
 
-class TPBertPooler(nn.Module):
-    def __init__(self, config):
-        super(TPBertPooler, self).__init__()
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        self.activation = nn.Tanh()
-
-    def forward(self, hidden_states):
-        # We "pool" the model by simply taking the hidden state corresponding
-        # to the first token.
-        # [bs,seq_len,hidden_size] -> [bs,hidden_size]
-        first_token_tensor = hidden_states[:, 0]
-        pooled_output = self.dense(first_token_tensor)
-        pooled_output = self.activation(pooled_output)
-        return pooled_output
-
-
 class TPBertModel(nn.Module):
     def __init__(self, config):
         super(TPBertModel, self).__init__()
         self.config = config
 
         # 预处理阶段
-        self.embeddings = TPBertEmbeddings(config)
+        self.embeddings = BertEmbeddings(config)
         # 主干网络
         # TODO: Encoder 和 Decoder 可以统一为包含多个TransformerLayer的TransformerBlock
         self.encoder = TPBertEncoder(config)
-        self.pooler = TPBertPooler(config)
+        self.pooler = BertPooler(config)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
         if attention_mask is None:
@@ -263,6 +190,7 @@ class TPBertModel(nn.Module):
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
 
         embedding_output = self.embeddings(input_ids, token_type_ids)
+        
         encoded_layers = self.encoder(embedding_output,
                                       extended_attention_mask,
                                       output_all_encoded_layers=output_all_encoded_layers)
