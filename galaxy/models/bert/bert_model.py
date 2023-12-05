@@ -96,6 +96,7 @@ class BertAttention(nn.Module):
                                 fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
                                 merge_weights = config.merge_weights) 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)    
+        # Linear output
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
 
     def transpose_for_scores(self, x):

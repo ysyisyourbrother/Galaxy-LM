@@ -51,7 +51,7 @@ if __name__ == '__main__':
     # Train
     model.train()
     # 147456 = 768*4*2*2*12 (hidden_size*lora_att_dim*2(A/B)*2(QV)*num_hidden_layers
-    print('number of bert parameters:', get_parameter_number(model.bert))
+    print('number of bert parameters:', get_parameter_number(model.bert)) 
     # TODO: 使用更合适的优化器
     optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
     for i, (trains, labels) in enumerate(train_iter):

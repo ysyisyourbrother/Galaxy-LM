@@ -4,6 +4,7 @@ import math
 import copy
 from galaxy.models.bert.bert_model import gelu, swish
 from galaxy.models.bert.bert_model import BertEmbeddings,BertPooler,BertMLP,BertConnectLayer
+from galaxy.loralib.layers import  Linear as LoraLinear
 from galaxy.core.model_parallel.mappings import (
     scatter_to_sequence_parallel_region,
     gather_from_sequence_parallel_region,
@@ -26,10 +27,27 @@ class SPBertAttention(nn.Module):
 
         # 定义qkv大小，考虑张量并行对head的分割。默认qkv head_size相同
         self.qkv_projection_size = self.config.att_head_size * self.num_attention_heads
-
-        self.query = nn.Linear(config.hidden_size, self.qkv_projection_size)
-        self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
-        self.value = nn.Linear(config.hidden_size, self.qkv_projection_size)
+        if config.use_lora == False or config.lora_att_dim == 0:
+            self.query = nn.Linear(config.hidden_size, self.qkv_projection_size)
+            self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
+            self.value = nn.Linear(config.hidden_size, self.qkv_projection_size)
+        else:
+            self.query = LoraLinear(config.hidden_size, 
+                               self.qkv_projection_size,
+                               r = config.lora_att_dim,
+                               lora_alpha = config.lora_alpha,
+                               lora_dropout = config.lora_dropout,
+                               fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                               merge_weights = config.merge_weights) 
+            self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
+            self.value = LoraLinear(config.hidden_size, 
+                               self.qkv_projection_size,
+                               r = config.lora_att_dim,
+                               lora_alpha = config.lora_alpha,
+                               lora_dropout = config.lora_dropout,
+                               fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                               merge_weights = config.merge_weights) 
+            
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
