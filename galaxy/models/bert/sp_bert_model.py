@@ -3,15 +3,12 @@ import torch.nn as nn
 import math
 import copy
 from galaxy.models.bert.bert_model import gelu, swish
-from galaxy.models.bert.bert_model import BertLayerNorm, BertEmbeddings,BertPooler,BertMLP,BertConnectLayer
+from galaxy.models.bert.bert_model import BertEmbeddings,BertPooler,BertMLP,BertConnectLayer
 from galaxy.core.model_parallel.mappings import (
-    copy_to_tensor_model_parallel_region,
-    reduce_from_tensor_model_parallel_region,
     scatter_to_sequence_parallel_region,
     gather_from_sequence_parallel_region,
+    reduce_scatter_for_tp_to_sp
 )
-
-
 
 class SPBertAttention(nn.Module):
     def __init__(self, config):
@@ -60,10 +57,10 @@ class SPBertAttention(nn.Module):
 
         # 插入通信原语：K和V矩阵 all-gather
         # [bs, seq_len//sp_group, hidden_size] -> [bs, seq_len, hidden_size]
-        gather_key_layer = gather_from_sequence_parallel_region(mixed_key_layer, False, 
+        gather_key_layer = gather_from_sequence_parallel_region(mixed_key_layer, False,
                                                                 self.config.seq_scatter_list)
         # [bs, seq_len//sp_group, hidden_size] -> [bs, seq_len, hidden_size]
-        gather_value_layer = gather_from_sequence_parallel_region(mixed_value_layer, False, 
+        gather_value_layer = gather_from_sequence_parallel_region(mixed_value_layer, False,
                                                                   self.config.seq_scatter_list)
 
         # 调整QKV矩阵的shape，使其满足Multi-head Attention形式
@@ -98,10 +95,8 @@ class SPBertAttention(nn.Module):
 
         # Linear output
         multi_attention_output = self.dense(context_layer)
-
+        # 因为ATT后面接的CON,CON 是 SP,所以这里不需要gather
         return multi_attention_output
-
-
 
 
 class SPBertLayer(nn.Module):
@@ -184,7 +179,7 @@ class SPBertModel(nn.Module):
 
         # Scatter input to devices:
         scatter_sp_input = scatter_to_sequence_parallel_region(embedding_output, self.config.seq_scatter_list)
-
+        
         # 序列并行目前只支持输出最后层的结果
         output_all_encoded_layers = False
 

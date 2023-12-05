@@ -6,7 +6,8 @@ from galaxy.models.bert.bert_model import gelu, swish
 from galaxy.models.bert.bert_model import BertLayerNorm, BertEmbeddings,BertPooler,BertConnectLayer
 from galaxy.core.model_parallel.mappings import (
     copy_to_tensor_model_parallel_region,
-    reduce_from_tensor_model_parallel_region
+    reduce_from_tensor_model_parallel_region,
+    reduce_scatter_for_tp_to_sp
 )
 
 class TPBertAttention(nn.Module):
@@ -47,8 +48,6 @@ class TPBertAttention(nn.Module):
             attention_mask: [1,1,1,0,0,...,0] 标记sequence中哪些为有效位置
         """
         # TODO: 实现到core.tp中去，可以通过配置决定线性操作是否需要在开头allreduce或者在结尾allgather
-        # 插入张量并行通信原语
-        hidden_states = copy_to_tensor_model_parallel_region(hidden_states)
 
         # 计算QKV矩阵
         # [bs, seq_len, hidden_size] -> [bs, seq_len, hidden_size//tp_gourp]
@@ -90,32 +89,41 @@ class TPBertAttention(nn.Module):
 
         # Linear output
         multi_attention_output = self.dense(context_layer)
-
-        # 插入张量并行通信原语
-        multi_attention_output = reduce_from_tensor_model_parallel_region(multi_attention_output)
-
-        return multi_attention_output
-
+        # 根据下一个CON是怎么并行的，插入张量并行通信原语
+        if not hasattr(self.config, 'con_parallel_method') or  self.config.con_parallel_method == "None": # CON不并行，all reduce
+            return reduce_from_tensor_model_parallel_region(multi_attention_output)
+        elif self.config.con_parallel_method == "SP": # CON SP, reduce scatter
+            return  reduce_scatter_for_tp_to_sp(multi_attention_output, self.config.seq_scatter_list)
+        else:
+            raise NotImplementedError("con_parallel_method should be SP or None")
+            
+ 
 
 class TPBertMLP(nn.Module):
     def __init__(self, config):
         super(TPBertMLP, self).__init__()
+        self.config = config
         self.dense1 = nn.Linear(config.hidden_size, config.tp_intermediate_size)
         self.dense2 = nn.Linear(config.tp_intermediate_size, config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.activation = gelu
     
     def forward(self, hidden_states):
-        # 插入张量并行通信原语
-        hidden_states = copy_to_tensor_model_parallel_region(hidden_states)
         mlp_output = self.dense2(self.dropout(self.activation(self.dense1(hidden_states))))
-        # 插入张量并行通信原语
-        mlp_output = reduce_from_tensor_model_parallel_region(mlp_output)
+        # 根据下一个CON是怎么并行的，插入张量并行通信原语
+        if not hasattr(self.config, 'con_parallel_method') or  self.config.con_parallel_method == "None": # CON不并行，all reduce
+            return reduce_from_tensor_model_parallel_region(mlp_output)
+        elif self.config.con_parallel_method == "SP": #CON SP, reduce scatter
+            return reduce_scatter_for_tp_to_sp(mlp_output, self.config.seq_scatter_list)
+        else:
+            raise NotImplementedError("con_parallel_method should be SP or None")
 
-        return mlp_output
 
 
 class TPBertLayer(nn.Module):
+    """
+    ATT(TP) -- CON 1 -- MLP(TP) -- CON 2
+    """
     def __init__(self, config):
         super(TPBertLayer, self).__init__()
         self.attention = TPBertAttention(config)
@@ -188,8 +196,9 @@ class TPBertModel(nn.Module):
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
 
         embedding_output = self.embeddings(input_ids, token_type_ids)
-        
-        encoded_layers = self.encoder(embedding_output,
+        # Copy input to devices
+        tp_input = copy_to_tensor_model_parallel_region(embedding_output)
+        encoded_layers = self.encoder(tp_input,
                                       extended_attention_mask,
                                       output_all_encoded_layers=output_all_encoded_layers)
         # encoder的最终输出结果
