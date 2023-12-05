@@ -262,7 +262,7 @@ class _ReduceScatter(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input_, seq_scatter_list):
         ctx.seq_scatter_list = seq_scatter_list
-        return _reduce_scatter_along_seq_dim(input_,seq_scatter_list)
+        return _reduce_scatter_along_seq_dim(input_,seq_scatter_list) #TODO:使用reduce_scatter_manual 很慢
     
         
     
