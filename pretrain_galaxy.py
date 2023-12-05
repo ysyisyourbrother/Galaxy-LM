@@ -9,13 +9,20 @@ from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.galaxy_bert_model as galaxy_bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.initialize import initialize_galaxy
+from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
+
 
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
         self.bert = galaxy_bert_model.GalaxyBertModel(config)
-        for param in self.bert.parameters():
-            param.requires_grad = True
+        if not config.use_lora or config.lora_att_dim == 0:
+            print("not use lora, train full parameters")
+            for param in self.bert.parameters():
+                param.requires_grad = True
+        else:
+            print("use lora")
+            mark_only_lora_as_trainable(self.bert)
         # 最后用一个全连接层将提取到的特征转化为num_class个值
         self.fc = nn.Linear(config.hidden_size, config.num_classes)
 
@@ -54,6 +61,7 @@ if __name__ == '__main__':
     # Train
     if config.train:
         model.train()
+        print('number of bert parameters:', get_parameter_number(model.bert)) 
         print("Start training")
     else:
         model.eval()

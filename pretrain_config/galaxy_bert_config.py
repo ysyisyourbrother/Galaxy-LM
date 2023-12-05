@@ -12,7 +12,7 @@ class BertConfig():
         self.vocab_path = "dataset/THUCNews/vocab.txt"
 
         ''' Training Configuration '''
-        self.train = False
+        self.train = True
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备
         self.num_epochs = 1                                             # epoch数
         self.batch_size = 10                                           # mini-batch大小
@@ -49,14 +49,23 @@ class BertConfig():
         self.con_parallel_method = "SP"  # 
         self.seq_scatter_list = [20,12] 
         # ATT:TP 
-        self.att_parallel_method = "SP"
+        self.att_parallel_method = "TP"
         self.tp_num_attention_heads = int(self.num_attention_heads/2)      # 张量并行环境下当前rank有多少个heads
         # MLP:TP
-        self.mlp_parallel_method = "SP"
+        self.mlp_parallel_method = "TP"
         self.tp_intermediate_size = int(self.intermediate_size/2 )            # TP下MLP两个dense层中间的intermediate state大小
         # init process
-        self.init_method = "tcp://127.0.0.1:23045"                         # torch.dist.init_process_group中使用的master device    
+        self.init_method = "tcp://127.0.0.1:23000"                         # torch.dist.init_process_group中使用的master device    
         self.distributed_backend = "gloo"
+        
+        # lora
+        self.use_lora = True
+        self.lora_att_dim = 4
+        self.lora_alpha = 32
+        self.lora_dropout = 0.1
+        self.fan_in_fan_out = True
+        self.merge_weights = False
+
         
         
 
