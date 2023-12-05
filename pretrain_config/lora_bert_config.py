@@ -45,7 +45,12 @@ class BertConfig():
         self.vocab_size = 21128
         
         # lora 
-        self.use_lora = False
+        self.use_lora = True
+        self.lora_att_dim = 4
+        self.lora_alpha = 32
+        self.lora_dropout = 0.1
+        self.fan_in_fan_out = True
+        self.merge_weights = False
         
 
 

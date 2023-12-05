@@ -3,18 +3,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 
-from pretrain_config.bert_config import config
+from pretrain_config.lora_bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.bert_model as bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
-from galaxy.loralib.utils import get_parameter_number
+from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
+
+
+
 
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
         self.bert = bert_model.BertModel(config)
-        for param in self.bert.parameters():
-            param.requires_grad = True
+        if  hasattr(config, 'use_lora') and config.lora_att_dim > 0:
+            print('use lora')
+            mark_only_lora_as_trainable(self.bert)
         # 最后用一个全连接层将提取到的特征转化为num_class个值
         self.fc = nn.Linear(config.hidden_size, config.num_classes)
 
@@ -43,9 +47,11 @@ if __name__ == '__main__':
 
     # Prepare Model
     model = Model(config).to(config.device)
-    print('number of bert parameters:', get_parameter_number(model.bert))
+    
     # Train
     model.train()
+    # 147456 = 768*4*2*2*12 (hidden_size*lora_att_dim*2(A/B)*2(QV)*num_hidden_layers
+    print('number of bert parameters:', get_parameter_number(model.bert))
     # TODO: 使用更合适的优化器
     optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
     for i, (trains, labels) in enumerate(train_iter):
