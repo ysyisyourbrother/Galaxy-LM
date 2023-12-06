@@ -57,6 +57,14 @@ class BertConfig():
         self.num_hidden_layers = 1                  # 覆盖模型参数 
         self.pre_process = True
         self.post_process = False
+        
+        # lora
+        self.use_lora = True
+        self.lora_att_dim = 4
+        self.lora_alpha = 32
+        self.lora_dropout = 0.1
+        self.fan_in_fan_out = True
+        self.merge_weights = False
 
 
 config = BertConfig()
