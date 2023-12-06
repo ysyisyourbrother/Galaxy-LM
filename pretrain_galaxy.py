@@ -62,6 +62,7 @@ if __name__ == '__main__':
     if config.train:
         model.train()
         print('number of bert parameters:', get_parameter_number(model.bert)) 
+        print('number of fc parameters:', get_parameter_number(model.fc)) 
         print("Start training")
     else:
         model.eval()

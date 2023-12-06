@@ -48,6 +48,15 @@ class BertConfig():
         ''' Distributed Configuration '''
         self.init_method = "tcp://192.168.124.4:23000"                         # torch.dist.init_process_group中使用的master device    
         self.distributed_backend = "gloo"
+        
+        # lora
+        self.use_lora = False
+        self.lora_att_dim = 4
+        self.lora_alpha = 32
+        self.lora_dropout = 0.1
+        self.fan_in_fan_out = True
+        self.merge_weights = False
+        
 
 
 config = BertConfig()

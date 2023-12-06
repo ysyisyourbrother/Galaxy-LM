@@ -16,8 +16,12 @@ class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
         self.bert = bert_model.BertModel(config)
-        if  hasattr(config, 'use_lora') and config.lora_att_dim > 0:
-            print('use lora')
+        if not config.use_lora or config.lora_att_dim == 0:
+            print("not use lora, train full parameters")
+            for param in self.bert.parameters():
+                param.requires_grad = True
+        else:
+            print("use lora")
             mark_only_lora_as_trainable(self.bert)
         # 最后用一个全连接层将提取到的特征转化为num_class个值
         self.fc = nn.Linear(config.hidden_size, config.num_classes)
