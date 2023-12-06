@@ -27,6 +27,8 @@ class PipelineRuntime():
         self.num_forward_micro_batch = 0    # 统计执行了多少个micro-batch的前向传播
         self.num_backward_micro_batch = 0
 
+        self.training_iteration = 0     # 统计一共执行了多少次sync-round
+
     def parameters(self):
         parameter_iterators = []
         parameter_iterators.append(self.model.parameters())
@@ -166,4 +168,5 @@ class PipelineRuntime():
             self.run_backward()
         
         self.optimizer.step()
-
+        self.training_iteration += 1
+        print(f"Finish {self.training_iteration}-th iteration!")
