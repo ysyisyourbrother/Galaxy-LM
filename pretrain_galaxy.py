@@ -4,17 +4,18 @@ import torch.nn.functional as F
 import time
 
 # TODO 将不同pretrain的config分离
-from pretrain_config.sp_bert_config import config
+from pretrain_config.galaxy_bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
-import galaxy.models.bert.sp_bert_model as sp_bert_model
+import galaxy.models.bert.galaxy_bert_model as galaxy_bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.initialize import initialize_galaxy
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
 
+
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
-        self.bert = sp_bert_model.SPBertModel(config)
+        self.bert = galaxy_bert_model.GalaxyBertModel(config)
         if not config.use_lora or config.lora_att_dim == 0:
             print("not use lora, train full parameters")
             for param in self.bert.parameters():
@@ -53,19 +54,34 @@ if __name__ == '__main__':
 
     # Prepare Model
     model = Model(config).to(config.device)
-
+    # Print Parallel Mothod
+    print(f"Attention Parallel Method: {config.att_parallel_method}")
+    print(f"MLP Parallel Method: {config.mlp_parallel_method}")
+    print(f"CON Parallel Method: {config.con_parallel_method}")
     # Train
-    model.train()
-    print('number of bert parameters:', get_parameter_number(model.bert)) 
-    
+    if config.train:
+        model.train()
+        print('number of bert parameters:', get_parameter_number(model.bert)) 
+        print('number of fc parameters:', get_parameter_number(model.fc)) 
+        print("Start training")
+    else:
+        model.eval()
+        print("Start inferencing")
     # TODO: 将优化器调整为分布式优化
     optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
-    for i, (trains, labels) in enumerate(train_iter):
-        outputs = model(trains)
-        model.zero_grad()
-        loss = F.cross_entropy(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        
-        print(f"finish {i} iteration.")
-        break
+    for i in range(config.num_epochs):
+        for i, (trains, labels) in enumerate(train_iter):
+            outputs = model(trains)
+            if config.train:
+                model.zero_grad()
+                loss = F.cross_entropy(outputs, labels)
+                loss.backward()
+                optimizer.step()
+            
+            # print(f"finish {i} iteration.")
+        # break
+    print("Finish training")
+    time_usage = get_time_dif(start_time)
+    print(time_usage)
+    print(f"{time_usage.seconds} (seconds)")
+     

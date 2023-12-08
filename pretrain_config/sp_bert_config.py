@@ -49,6 +49,15 @@ class BertConfig():
         self.distributed_backend = "gloo"
         self.seq_scatter_list = [20,12]                              # 包含sequence被划分到每个设备上的长度
         assert sum(self.seq_scatter_list) == self.pad_size      # 要求总和等于seq_len
+        
+        # lora
+        self.use_lora = True
+        self.lora_att_dim = 4
+        self.lora_alpha = 32
+        self.lora_dropout = 0.1
+        self.fan_in_fan_out = True
+        self.merge_weights = False
+        
 
 
 config = BertConfig()

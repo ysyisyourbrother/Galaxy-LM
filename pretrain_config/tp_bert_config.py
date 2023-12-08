@@ -45,10 +45,18 @@ class BertConfig():
         self.vocab_size = 21128
 
         ''' Distributed Configuration '''
-        self.tp_num_attention_heads = self.num_attention_heads/2      # 张量并行环境下当前rank有多少个heads
-        self.tp_intermediate_size = self.intermediate_size/2             # TP下MLP两个dense层中间的intermediate state大小
+        self.tp_num_attention_heads = int(self.num_attention_heads/2)      # 张量并行环境下当前rank有多少个heads
+        self.tp_intermediate_size = int(self.intermediate_size/2)             # TP下MLP两个dense层中间的intermediate state大小
         self.init_method = "tcp://127.0.0.1:23000"                         # torch.dist.init_process_group中使用的master device    
         self.distributed_backend = "gloo"
+        
+        # lora
+        self.use_lora = True
+        self.lora_att_dim = 4
+        self.lora_alpha = 32
+        self.lora_dropout = 0.1
+        self.fan_in_fan_out = True
+        self.merge_weights = False
 
 
 config = BertConfig()

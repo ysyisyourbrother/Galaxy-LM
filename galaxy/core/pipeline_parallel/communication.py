@@ -74,7 +74,7 @@ class CommunicationHandler():
 
 
     def start_helper_thread(self, func, args):
-        helper_thread = threading.Thread(target=func, args=args)
+        helper_thread = threading.Thread(target=func, args=args,daemon=True)
         helper_thread.start()
 
 

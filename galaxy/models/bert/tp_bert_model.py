@@ -2,69 +2,14 @@ import torch
 import torch.nn as nn
 import math
 import copy
-
+from galaxy.models.bert.bert_model import gelu, swish
+from galaxy.models.bert.bert_model import BertLayerNorm, BertEmbeddings,BertPooler,BertConnectLayer
 from galaxy.core.model_parallel.mappings import (
     copy_to_tensor_model_parallel_region,
-    reduce_from_tensor_model_parallel_region
+    reduce_from_tensor_model_parallel_region,
+    reduce_scatter_for_tp_to_sp
 )
-
-
-def gelu(x):
-    """Implementation of the gelu activation function.
-        For information: OpenAI GPT's gelu is slightly different (and gives slightly different results):
-        0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
-        Also see https://arxiv.org/abs/1606.08415
-    """
-    return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
-
-
-def swish(x):
-    return x * torch.sigmoid(x)
-
-
-class TPBertLayerNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-12):
-        super(TPBertLayerNorm, self).__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.bias = nn.Parameter(torch.zeros(hidden_size))
-        self.variance_epsilon = eps
-
-    def forward(self, x):
-        u = x.mean(-1, keepdim=True)
-        s = (x - u).pow(2).mean(-1, keepdim=True)
-        x = (x - u) / torch.sqrt(s + self.variance_epsilon)
-        return self.weight * x + self.bias
-
-
-class TPBertEmbeddings(nn.Module):
-    """Construct the embeddings from word, position and token_type embeddings.
-    """
-    def __init__(self, config):
-        super(TPBertEmbeddings, self).__init__()
-        # Bert 原文中采用了三种Embeddings组合方式：Word embeddings+Position embedding+Token type embedding
-        self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
-        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
-        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
-
-        self.LayerNorm = TPBertLayerNorm(config.hidden_size, eps=1e-12)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-
-    def forward(self, input_ids, token_type_ids=None):
-        seq_length = input_ids.size(1)
-        position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
-        position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
-        if token_type_ids is None:
-            token_type_ids = torch.zeros_like(input_ids)
-
-        words_embeddings = self.word_embeddings(input_ids)
-        position_embeddings = self.position_embeddings(position_ids)
-        token_type_embeddings = self.token_type_embeddings(token_type_ids)
-
-        embeddings = words_embeddings + position_embeddings + token_type_embeddings
-        embeddings = self.LayerNorm(embeddings)
-        embeddings = self.dropout(embeddings)
-        return embeddings
-
+from galaxy.loralib.layers import  Linear as LoraLinear
 
 class TPBertAttention(nn.Module):
     def __init__(self, config):
@@ -81,14 +26,30 @@ class TPBertAttention(nn.Module):
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         # 定义qkv大小，考虑张量并行对head的分割。默认qkv head_size相同
-        self.qkv_projection_size = self.config.att_head_size * self.config.tp_num_attention_heads
-
-        self.query = nn.Linear(config.hidden_size, self.qkv_projection_size)
-        self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
-        self.value = nn.Linear(config.hidden_size, self.qkv_projection_size)
-
+        
+        self.qkv_projection_size = int(self.config.att_head_size * self.config.tp_num_attention_heads)
+        if config.use_lora == False or config.lora_att_dim == 0:
+            self.query = nn.Linear(config.hidden_size, self.qkv_projection_size)
+            self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
+            self.value = nn.Linear(config.hidden_size, self.qkv_projection_size)
+        else:
+            self.query = LoraLinear(config.hidden_size, 
+                             self.qkv_projection_size,
+                               r = config.lora_att_dim,
+                               lora_alpha = config.lora_alpha,
+                               lora_dropout = config.lora_dropout,
+                               fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                               merge_weights = config.merge_weights) 
+            self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
+            self.value = LoraLinear(config.hidden_size, 
+                               self.qkv_projection_size,
+                               r = config.lora_att_dim,
+                               lora_alpha = config.lora_alpha,
+                               lora_dropout = config.lora_dropout,
+                               fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                               merge_weights = config.merge_weights) 
+            
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-
         # Linear output
         self.dense = nn.Linear(self.qkv_projection_size, self.config.hidden_size)
 
@@ -104,8 +65,6 @@ class TPBertAttention(nn.Module):
             attention_mask: [1,1,1,0,0,...,0] 标记sequence中哪些为有效位置
         """
         # TODO: 实现到core.tp中去，可以通过配置决定线性操作是否需要在开头allreduce或者在结尾allgather
-        # 插入张量并行通信原语
-        hidden_states = copy_to_tensor_model_parallel_region(hidden_states)
 
         # 计算QKV矩阵
         # [bs, seq_len, hidden_size] -> [bs, seq_len, hidden_size//tp_gourp]
@@ -147,48 +106,55 @@ class TPBertAttention(nn.Module):
 
         # Linear output
         multi_attention_output = self.dense(context_layer)
-
-        # 插入张量并行通信原语
-        multi_attention_output = reduce_from_tensor_model_parallel_region(multi_attention_output)
-
-        return multi_attention_output
-
+        # 根据下一个CON是怎么并行的，插入张量并行通信原语
+        if not hasattr(self.config, 'con_parallel_method') or  self.config.con_parallel_method == "None": # CON不并行，all reduce
+            return reduce_from_tensor_model_parallel_region(multi_attention_output)
+        elif self.config.con_parallel_method == "SP": # CON SP, reduce scatter
+            return  reduce_scatter_for_tp_to_sp(multi_attention_output, self.config.seq_scatter_list)
+        else:
+            raise NotImplementedError("con_parallel_method should be SP or None")
+            
+ 
 
 class TPBertMLP(nn.Module):
     def __init__(self, config):
         super(TPBertMLP, self).__init__()
+        self.config = config
         self.dense1 = nn.Linear(config.hidden_size, config.tp_intermediate_size)
         self.dense2 = nn.Linear(config.tp_intermediate_size, config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.activation = gelu
     
     def forward(self, hidden_states):
-        # 插入张量并行通信原语
-        hidden_states = copy_to_tensor_model_parallel_region(hidden_states)
         mlp_output = self.dense2(self.dropout(self.activation(self.dense1(hidden_states))))
-        # 插入张量并行通信原语
-        mlp_output = reduce_from_tensor_model_parallel_region(mlp_output)
+        # 根据下一个CON是怎么并行的，插入张量并行通信原语
+        if not hasattr(self.config, 'con_parallel_method') or  self.config.con_parallel_method == "None": # CON不并行，all reduce
+            return reduce_from_tensor_model_parallel_region(mlp_output)
+        elif self.config.con_parallel_method == "SP": #CON SP, reduce scatter
+            return reduce_scatter_for_tp_to_sp(mlp_output, self.config.seq_scatter_list)
+        else:
+            raise NotImplementedError("con_parallel_method should be SP or None")
 
-        return mlp_output
 
 
 class TPBertLayer(nn.Module):
+    """
+    ATT(TP) -- CON 1 -- MLP(TP) -- CON 2
+    """
     def __init__(self, config):
         super(TPBertLayer, self).__init__()
         self.attention = TPBertAttention(config)
         self.mlp = TPBertMLP(config)
-        self.ln_1 = TPBertLayerNorm(config.hidden_size, eps=1e-12)
-        self.ln_2 = TPBertLayerNorm(config.hidden_size, eps=1e-12)
-        self.dropout_1 = nn.Dropout(config.hidden_dropout_prob)
-        self.dropout_2 = nn.Dropout(config.hidden_dropout_prob)
+        self.con1 = BertConnectLayer(config)
+        self.con2 = BertConnectLayer(config)
 
     def forward(self, hidden_states, attention_mask):
-        attention_output = self.attention(self.ln_1(hidden_states), attention_mask)
-        attention_output = hidden_states + self.dropout_1(hidden_states)
-        mlp_output = self.mlp(self.ln_2(attention_output))
-        layer_output = hidden_states + self.dropout_2(mlp_output)
-
+        attention_output = self.attention(  hidden_states , attention_mask)
+        connective_output = self.con1(hidden_states ,attention_output)
+        mlp_output = self.mlp(connective_output)
+        layer_output =  self.con2(connective_output,mlp_output)
         return layer_output
+
 
 
 class TPBertEncoder(nn.Module):
@@ -213,33 +179,17 @@ class TPBertEncoder(nn.Module):
         return all_encoder_layers
 
 
-class TPBertPooler(nn.Module):
-    def __init__(self, config):
-        super(TPBertPooler, self).__init__()
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        self.activation = nn.Tanh()
-
-    def forward(self, hidden_states):
-        # We "pool" the model by simply taking the hidden state corresponding
-        # to the first token.
-        # [bs,seq_len,hidden_size] -> [bs,hidden_size]
-        first_token_tensor = hidden_states[:, 0]
-        pooled_output = self.dense(first_token_tensor)
-        pooled_output = self.activation(pooled_output)
-        return pooled_output
-
-
 class TPBertModel(nn.Module):
     def __init__(self, config):
         super(TPBertModel, self).__init__()
         self.config = config
 
         # 预处理阶段
-        self.embeddings = TPBertEmbeddings(config)
+        self.embeddings = BertEmbeddings(config)
         # 主干网络
         # TODO: Encoder 和 Decoder 可以统一为包含多个TransformerLayer的TransformerBlock
         self.encoder = TPBertEncoder(config)
-        self.pooler = TPBertPooler(config)
+        self.pooler = BertPooler(config)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
         if attention_mask is None:
@@ -263,7 +213,9 @@ class TPBertModel(nn.Module):
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
 
         embedding_output = self.embeddings(input_ids, token_type_ids)
-        encoded_layers = self.encoder(embedding_output,
+        # Copy input to devices
+        tp_input = copy_to_tensor_model_parallel_region(embedding_output)
+        encoded_layers = self.encoder(tp_input,
                                       extended_attention_mask,
                                       output_all_encoded_layers=output_all_encoded_layers)
         # encoder的最终输出结果

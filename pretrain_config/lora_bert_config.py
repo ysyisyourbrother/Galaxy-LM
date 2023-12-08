@@ -13,7 +13,6 @@ class BertConfig():
 
         ''' Training Configuration '''
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备
-        # self.device = "cpu"
         self.num_epochs = 3                                             # epoch数
         self.batch_size = 10                                           # mini-batch大小
         self.pad_size = 32                                              # 每句话处理成的长度(短填长切)
@@ -38,19 +37,15 @@ class BertConfig():
         self.hidden_size = 768
         self.intermediate_size = 4*self.hidden_size                # MLP层两个dense层中间的intermediate state大小
         self.num_attention_heads = 12
-        self.num_hidden_layers = 1 
+        self.num_hidden_layers = 12
         self.att_head_size = int(self.hidden_size/self.num_attention_heads)
 
         # 词表
         self.type_vocab_size = 2
         self.vocab_size = 21128
-
-        ''' Distributed Configuration '''
-        self.init_method = "tcp://192.168.124.4:23000"                         # torch.dist.init_process_group中使用的master device    
-        self.distributed_backend = "gloo"
         
-        # lora
-        self.use_lora = False
+        # lora 
+        self.use_lora = True
         self.lora_att_dim = 4
         self.lora_alpha = 32
         self.lora_dropout = 0.1

@@ -7,6 +7,7 @@ from pretrain_config.bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.bert_model as bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
+from galaxy.loralib.utils import get_parameter_number
 
 class Model(nn.Module):
     def __init__(self, config):
@@ -42,7 +43,7 @@ if __name__ == '__main__':
 
     # Prepare Model
     model = Model(config).to(config.device)
-
+    print('number of bert parameters:', get_parameter_number(model.bert))
     # Train
     model.train()
     # TODO: 使用更合适的优化器

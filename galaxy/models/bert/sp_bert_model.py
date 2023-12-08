@@ -2,71 +2,14 @@ import torch
 import torch.nn as nn
 import math
 import copy
-
+from galaxy.models.bert.bert_model import gelu, swish
+from galaxy.models.bert.bert_model import BertEmbeddings,BertPooler,BertMLP,BertConnectLayer
+from galaxy.loralib.layers import  Linear as LoraLinear
 from galaxy.core.model_parallel.mappings import (
-    copy_to_tensor_model_parallel_region,
-    reduce_from_tensor_model_parallel_region,
     scatter_to_sequence_parallel_region,
     gather_from_sequence_parallel_region,
+    reduce_scatter_for_tp_to_sp
 )
-
-
-def gelu(x):
-    """Implementation of the gelu activation function.
-        For information: OpenAI GPT's gelu is slightly different (and gives slightly different results):
-        0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
-        Also see https://arxiv.org/abs/1606.08415
-    """
-    return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
-
-
-def swish(x):
-    return x * torch.sigmoid(x)
-
-
-class SPBertLayerNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-12):
-        super(SPBertLayerNorm, self).__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.bias = nn.Parameter(torch.zeros(hidden_size))
-        self.variance_epsilon = eps
-
-    def forward(self, x):
-        u = x.mean(-1, keepdim=True)
-        s = (x - u).pow(2).mean(-1, keepdim=True)
-        x = (x - u) / torch.sqrt(s + self.variance_epsilon)
-        return self.weight * x + self.bias
-
-
-class SPBertEmbeddings(nn.Module):
-    """Construct the embeddings from word, position and token_type embeddings.
-    """
-    def __init__(self, config):
-        super(SPBertEmbeddings, self).__init__()
-        # Bert 原文中采用了三种Embeddings组合方式：Word embeddings+Position embedding+Token type embedding
-        self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
-        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
-        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
-
-        self.LayerNorm = SPBertLayerNorm(config.hidden_size, eps=1e-12)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-
-    def forward(self, input_ids, token_type_ids=None):
-        seq_length = input_ids.size(1)
-        position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
-        position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
-        if token_type_ids is None:
-            token_type_ids = torch.zeros_like(input_ids)
-
-        words_embeddings = self.word_embeddings(input_ids)
-        position_embeddings = self.position_embeddings(position_ids)
-        token_type_embeddings = self.token_type_embeddings(token_type_ids)
-
-        embeddings = words_embeddings + position_embeddings + token_type_embeddings
-        embeddings = self.LayerNorm(embeddings)
-        embeddings = self.dropout(embeddings)
-        return embeddings
-
 
 class SPBertAttention(nn.Module):
     def __init__(self, config):
@@ -84,10 +27,27 @@ class SPBertAttention(nn.Module):
 
         # 定义qkv大小，考虑张量并行对head的分割。默认qkv head_size相同
         self.qkv_projection_size = self.config.att_head_size * self.num_attention_heads
-
-        self.query = nn.Linear(config.hidden_size, self.qkv_projection_size)
-        self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
-        self.value = nn.Linear(config.hidden_size, self.qkv_projection_size)
+        if config.use_lora == False or config.lora_att_dim == 0:
+            self.query = nn.Linear(config.hidden_size, self.qkv_projection_size)
+            self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
+            self.value = nn.Linear(config.hidden_size, self.qkv_projection_size)
+        else:
+            self.query = LoraLinear(config.hidden_size, 
+                               self.qkv_projection_size,
+                               r = config.lora_att_dim,
+                               lora_alpha = config.lora_alpha,
+                               lora_dropout = config.lora_dropout,
+                               fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                               merge_weights = config.merge_weights) 
+            self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
+            self.value = LoraLinear(config.hidden_size, 
+                               self.qkv_projection_size,
+                               r = config.lora_att_dim,
+                               lora_alpha = config.lora_alpha,
+                               lora_dropout = config.lora_dropout,
+                               fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                               merge_weights = config.merge_weights) 
+            
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
@@ -115,10 +75,10 @@ class SPBertAttention(nn.Module):
 
         # 插入通信原语：K和V矩阵 all-gather
         # [bs, seq_len//sp_group, hidden_size] -> [bs, seq_len, hidden_size]
-        gather_key_layer = gather_from_sequence_parallel_region(mixed_key_layer, False, 
+        gather_key_layer = gather_from_sequence_parallel_region(mixed_key_layer, False,
                                                                 self.config.seq_scatter_list)
         # [bs, seq_len//sp_group, hidden_size] -> [bs, seq_len, hidden_size]
-        gather_value_layer = gather_from_sequence_parallel_region(mixed_value_layer, False, 
+        gather_value_layer = gather_from_sequence_parallel_region(mixed_value_layer, False,
                                                                   self.config.seq_scatter_list)
 
         # 调整QKV矩阵的shape，使其满足Multi-head Attention形式
@@ -153,46 +113,26 @@ class SPBertAttention(nn.Module):
 
         # Linear output
         multi_attention_output = self.dense(context_layer)
-
+        # 因为ATT后面接的CON,CON 是 SP,所以这里不需要gather
         return multi_attention_output
-
-
-class SPBertMLP(nn.Module):
-    def __init__(self, config):
-        super(SPBertMLP, self).__init__()
-        self.dense1 = nn.Linear(config.hidden_size, config.intermediate_size)
-        self.dense2 = nn.Linear(config.intermediate_size, config.hidden_size)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.activation = gelu
-    
-    def forward(self, hidden_states):
-        """ 执行两个Feed Forward Layer
-        Arguments:
-            - hidden_states: [bs, seq_len//sp_group, hidden_size]
-        """
-        # [bs, seq_len//sp_group, hidden_size] -> [bs, seq_len//sp_group, hidden_size]
-        mlp_output = self.dense2(self.dropout(self.activation(self.dense1(hidden_states))))
-
-        return mlp_output
 
 
 class SPBertLayer(nn.Module):
     def __init__(self, config):
         super(SPBertLayer, self).__init__()
         self.attention = SPBertAttention(config)
-        self.mlp = SPBertMLP(config)
-        self.ln_1 = SPBertLayerNorm(config.hidden_size, eps=1e-12)
-        self.ln_2 = SPBertLayerNorm(config.hidden_size, eps=1e-12)
-        self.dropout_1 = nn.Dropout(config.hidden_dropout_prob)
-        self.dropout_2 = nn.Dropout(config.hidden_dropout_prob)
+        self.mlp = BertMLP(config)
+        self.con1 = BertConnectLayer(config)
+        self.con2 = BertConnectLayer(config)
+
 
     def forward(self, hidden_states, attention_mask):
-        attention_output = self.attention(self.ln_1(hidden_states), attention_mask)
-        attention_output = hidden_states + self.dropout_1(hidden_states)
-        mlp_output = self.mlp(self.ln_2(attention_output))
-        layer_output = hidden_states + self.dropout_2(mlp_output)
-
+        attention_output = self.attention(  hidden_states , attention_mask)
+        connective_output = self.con1(hidden_states ,attention_output)
+        mlp_output = self.mlp(connective_output)
+        layer_output = self.con2(connective_output,mlp_output)
         return layer_output
+
 
 
 class SPBertEncoder(nn.Module):
@@ -217,21 +157,6 @@ class SPBertEncoder(nn.Module):
         return all_encoder_layers
 
 
-class SPBertPooler(nn.Module):
-    def __init__(self, config):
-        super(SPBertPooler, self).__init__()
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        self.activation = nn.Tanh()
-
-    def forward(self, hidden_states):
-        """ We "pool" the model by simply taking the hidden state corresponding to the first token
-        """
-
-        # [bs,seq_len,hidden_size] -> [bs,hidden_size]
-        first_token_tensor = hidden_states[:, 0]
-        pooled_output = self.dense(first_token_tensor)
-        pooled_output = self.activation(pooled_output)
-        return pooled_output
 
 
 class SPBertModel(nn.Module):
@@ -240,11 +165,11 @@ class SPBertModel(nn.Module):
         self.config = config
 
         # 预处理阶段
-        self.embeddings = SPBertEmbeddings(config)
+        self.embeddings = BertEmbeddings(config)
         # 主干网络
         # TODO: Encoder 和 Decoder 可以统一为包含多个TransformerLayer的TransformerBlock
         self.encoder = SPBertEncoder(config)
-        self.pooler = SPBertPooler(config)
+        self.pooler = BertPooler(config)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
 
@@ -272,7 +197,7 @@ class SPBertModel(nn.Module):
 
         # Scatter input to devices:
         scatter_sp_input = scatter_to_sequence_parallel_region(embedding_output, self.config.seq_scatter_list)
-
+        
         # 序列并行目前只支持输出最后层的结果
         output_all_encoded_layers = False
 

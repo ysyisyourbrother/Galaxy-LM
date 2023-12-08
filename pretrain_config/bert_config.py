@@ -43,6 +43,10 @@ class BertConfig():
         # 词表
         self.type_vocab_size = 2
         self.vocab_size = 21128
+        
+        # lora 
+        self.use_lora = False
+        
 
 
 config = BertConfig()

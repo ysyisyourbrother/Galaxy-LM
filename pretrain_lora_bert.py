@@ -3,18 +3,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 
-# TODO 将不同pretrain的config分离
-from pretrain_config.sp_bert_config import config
+from pretrain_config.lora_bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
-import galaxy.models.bert.sp_bert_model as sp_bert_model
+import galaxy.models.bert.bert_model as bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
-from galaxy.initialize import initialize_galaxy
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
+
+
+
 
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
-        self.bert = sp_bert_model.SPBertModel(config)
+        self.bert = bert_model.BertModel(config)
         if not config.use_lora or config.lora_att_dim == 0:
             print("not use lora, train full parameters")
             for param in self.bert.parameters():
@@ -26,18 +27,15 @@ class Model(nn.Module):
         self.fc = nn.Linear(config.hidden_size, config.num_classes)
 
     def forward(self, x):
-        # 每一个input的维度：(token_ids, int(label), seq_len, mask)
-        context = x[0]
-        mask = x[2]
+        # x: (token_ids, seq_len, mask)
+        context = (x[0]).to(config.device)
+        mask = (x[2]).to(config.device)
         _, pooled = self.bert(context, attention_mask=mask, output_all_encoded_layers=False)
         out = self.fc(pooled)
         return out
 
 
 if __name__ == '__main__':
-    # Initial Galaxy, args
-    initialize_galaxy(config)
-
     # Prapare Tokenizer
     tokenizer = BertTokenizer.from_pretrained(config.vocab_path)
 
@@ -53,12 +51,12 @@ if __name__ == '__main__':
 
     # Prepare Model
     model = Model(config).to(config.device)
-
+    
     # Train
     model.train()
+    # 147456 = 768*4*2*2*12 (hidden_size*lora_att_dim*2(A/B)*2(QV)*num_hidden_layers
     print('number of bert parameters:', get_parameter_number(model.bert)) 
-    
-    # TODO: 将优化器调整为分布式优化
+    # TODO: 使用更合适的优化器
     optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
     for i, (trains, labels) in enumerate(train_iter):
         outputs = model(trains)
@@ -67,5 +65,5 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
         
-        print(f"finish {i} iteration.")
+        print("finish one iteration.")
         break

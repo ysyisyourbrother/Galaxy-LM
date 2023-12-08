@@ -9,13 +9,20 @@ from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.tp_bert_model as tp_bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.initialize import initialize_galaxy
+from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
+
 
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
         self.bert = tp_bert_model.TPBertModel(config)
-        for param in self.bert.parameters():
-            param.requires_grad = True
+        if not config.use_lora or config.lora_att_dim == 0:
+            print("not use lora, train full parameters")
+            for param in self.bert.parameters():
+                param.requires_grad = True
+        else:
+            print("use lora")
+            mark_only_lora_as_trainable(self.bert)
         # 最后用一个全连接层将提取到的特征转化为num_class个值
         self.fc = nn.Linear(config.hidden_size, config.num_classes)
 
@@ -50,6 +57,8 @@ if __name__ == '__main__':
 
     # Train
     model.train()
+    print('number of bert parameters:', get_parameter_number(model.bert)) 
+
     # TODO: 将优化器调整为分布式优化
     optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
     for i, (trains, labels) in enumerate(train_iter):

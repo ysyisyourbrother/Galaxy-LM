@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import math
 import copy
+from galaxy.loralib.layers import  Linear as LoraLinear
+
 
 
 def gelu(x):
@@ -61,9 +63,9 @@ class BertEmbeddings(nn.Module):
         return embeddings
 
 
-class BertSelfAttention(nn.Module):
+class BertAttention(nn.Module):
     def __init__(self, config):
-        super(BertSelfAttention, self).__init__()
+        super(BertAttention, self).__init__()
         # hidden_size = num_attention_heads * head_size
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
@@ -72,12 +74,30 @@ class BertSelfAttention(nn.Module):
         self.num_attention_heads = config.num_attention_heads
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
-
-        self.query = nn.Linear(config.hidden_size, self.all_head_size)
-        self.key = nn.Linear(config.hidden_size, self.all_head_size)
-        self.value = nn.Linear(config.hidden_size, self.all_head_size)
-
-        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+        
+        if config.use_lora == False or config.lora_att_dim == 0:
+            self.query = nn.Linear(config.hidden_size, self.all_head_size)
+            self.key = nn.Linear(config.hidden_size, self.all_head_size)
+            self.value = nn.Linear(config.hidden_size, self.all_head_size)
+        else:
+            self.query = LoraLinear(config.hidden_size, 
+                               self.all_head_size,
+                               r = config.lora_att_dim,
+                               lora_alpha = config.lora_alpha,
+                               lora_dropout = config.lora_dropout,
+                               fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                               merge_weights = config.merge_weights) 
+            self.key = nn.Linear(config.hidden_size, self.all_head_size)
+            self.value = LoraLinear(config.hidden_size, 
+                                self.all_head_size,
+                                r = config.lora_att_dim,
+                                lora_alpha = config.lora_alpha,
+                                lora_dropout = config.lora_dropout,
+                                fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                                merge_weights = config.merge_weights) 
+        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)    
+        # Linear output
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -127,18 +147,9 @@ class BertSelfAttention(nn.Module):
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         # [bs, seq_len, num_att_head, att_head_size] -> [bs, seq_len, hidden_size]
         context_layer = context_layer.view(*new_context_layer_shape)
-        return context_layer
-
-
-class BertMultiAttention(nn.Module):
-    def __init__(self, config):
-        super(BertMultiAttention, self).__init__()
-        self.self = BertSelfAttention(config)
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-
-    def forward(self, input_tensor, attention_mask):
-        self_attention_output = self.self(input_tensor, attention_mask)
-        multi_attention_output = self.dense(self_attention_output)
+        
+        # Linear output
+        multi_attention_output = self.dense(context_layer)
         return multi_attention_output
 
 
@@ -153,23 +164,34 @@ class BertMLP(nn.Module):
     def forward(self, hidden_states):
         return self.dense2(self.dropout(self.activation(self.dense1(hidden_states))))
 
-
+class BertConnectLayer(nn.Module):
+    '''Connective Block: Dropout + Add + Layernorm  '''
+    def __init__(self, config):
+        super(BertConnectLayer, self).__init__()
+        self.ln = BertLayerNorm(config.hidden_size, eps=1e-12)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+    def forward(self, input, hidden_states):
+        hidden_states =  self.dropout(hidden_states)
+        hidden_states = self.ln(hidden_states + input)
+        return hidden_states
+        
+        
 class BertLayer(nn.Module):
+    '''
+    Attention --> Connective Block --> MLP --> Connective Block
+    '''
     def __init__(self, config):
         super(BertLayer, self).__init__()
-        self.attention = BertMultiAttention(config)
+        self.attention = BertAttention(config)
         self.mlp = BertMLP(config)
-        self.ln_1 = BertLayerNorm(config.hidden_size, eps=1e-12)
-        self.ln_2 = BertLayerNorm(config.hidden_size, eps=1e-12)
-        self.dropout_1 = nn.Dropout(config.hidden_dropout_prob)
-        self.dropout_2 = nn.Dropout(config.hidden_dropout_prob)
+        self.con1 = BertConnectLayer(config)
+        self.con2 = BertConnectLayer(config)
 
     def forward(self, hidden_states, attention_mask):
-        attention_output = self.attention(self.ln_1(hidden_states), attention_mask)
-        attention_output = hidden_states + self.dropout_1(hidden_states)
-        mlp_output = self.mlp(self.ln_2(attention_output))
-        layer_output = hidden_states + self.dropout_2(mlp_output)
-
+        attention_output = self.attention(  hidden_states , attention_mask)
+        connective_output = self.con1(hidden_states ,attention_output)
+        mlp_output = self.mlp(connective_output)
+        layer_output =  self.con2(connective_output,mlp_output)
         return layer_output
 
 
@@ -209,6 +231,7 @@ class BertPooler(nn.Module):
         pooled_output = self.activation(pooled_output)
         return pooled_output
 
+    
 
 class BertModel(nn.Module):
     def __init__(self, config):
