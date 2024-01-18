@@ -1059,7 +1059,8 @@ class LlamaMoEDecoderLayer(nn.Module):
             bias=False,
             **gating_config,
             **calculator_config,
-        ).half()
+        )
+        # .half()
 
     def forward(
         self,
