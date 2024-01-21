@@ -2,14 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time
-
+import argparse
 from pretrain_config.lora_bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.bert_model as bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
 
-
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config_file',default=None,type=str)
+    return parser.parse_args()
 
 
 class Model(nn.Module):
@@ -36,6 +39,12 @@ class Model(nn.Module):
 
 
 if __name__ == '__main__':
+    
+    args = parse_args()
+    if args.config_file is not None:
+        print("Loading config from file: ", args.config_file)
+        config.load_from_json(args.config_file)
+    config.print_config()
     # Prapare Tokenizer
     tokenizer = BertTokenizer.from_pretrained(config.vocab_path)
 

@@ -10,6 +10,7 @@ from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.bert_model as bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.initialize import initialize_galaxy
+from galaxy.utils import clean_up
 from galaxy.global_vars import get_args
 
 class Model(nn.Module):
@@ -34,7 +35,7 @@ if __name__ == '__main__':
     # Initial Galaxy, args
     initialize_galaxy(config)
     args = get_args()
-
+    config.print_config()
     # Prapare Tokenizer
     tokenizer = BertTokenizer.from_pretrained(config.vocab_path)
 
@@ -67,3 +68,4 @@ if __name__ == '__main__':
         
         print("finish one iteration.")
         break
+    clean_up()

@@ -50,8 +50,7 @@ class BertConfig():
         self.total_stage = 2 
         self.next_rank = 1
         self.pre_rank = None
-        # self.init_method = "tcp://192.168.124.4:23000"                         # torch.dist.init_process_group中使用的master device    
-        self.init_method = "tcp://127.0.0.1:23000"                         # torch.dist.init_process_group中使用的master device    
+        self.init_method = "tcp://192.168.124.4:23000"                         # torch.dist.init_process_group中使用的master device    
         self.distributed_backend = "gloo"
         self.num_microbatches = 4
         self.num_hidden_layers = 1                  # 覆盖模型参数 
@@ -59,7 +58,7 @@ class BertConfig():
         self.post_process = False
         
         # lora
-        self.use_lora = True
+        self.use_lora = False
         self.lora_att_dim = 4
         self.lora_alpha = 32
         self.lora_dropout = 0.1

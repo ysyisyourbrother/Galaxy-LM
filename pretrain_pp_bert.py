@@ -11,6 +11,7 @@ from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.pp_bert_model as bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.initialize import initialize_galaxy
+from galaxy.utils import clean_up
 from galaxy.global_vars import initial_args, get_args
 from galaxy.core.pipeline_parallel.schedules import PipelineRuntime
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
@@ -108,3 +109,4 @@ if __name__ == '__main__':
     training_iteration = 1
     for i in range(training_iteration):
         runtime.forward_backward_pipelining()
+    clean_up()

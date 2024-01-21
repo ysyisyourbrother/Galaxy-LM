@@ -9,6 +9,7 @@ def initial_args():
         parser = argparse.ArgumentParser(description='rank: device id')
         parser.add_argument('--rank', default=0, type=int)
         parser.add_argument('--world', default=1, type=int)
+        parser.add_argument('--config_file',default=None,type=str)
         _GLOBAL_ARGS = parser.parse_args()
 
 def get_args():

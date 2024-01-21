@@ -45,7 +45,7 @@ class BertConfig():
         self.vocab_size = 21128
 
         ''' Distributed Configuration '''
-        self.init_method = "tcp://127.0.0.1:23000"                         # torch.dist.init_process_group中使用的master device    
+        self.init_method = "tcp://192.168.124.4:23000"                         # torch.dist.init_process_group中使用的master device    
         self.distributed_backend = "gloo"
         self.seq_scatter_list = [20,12]                              # 包含sequence被划分到每个设备上的长度
         assert sum(self.seq_scatter_list) == self.pad_size      # 要求总和等于seq_len

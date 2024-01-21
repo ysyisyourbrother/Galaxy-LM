@@ -10,6 +10,9 @@ def initialize_galaxy(config):
 
 def _initialize_distributed(config):
     args = get_args()
+    if args.config_file is not None:
+        print("Loading config from file...")
+        config.load_from_json(args.config_file)
     print("Initializing process group...")
     torch.distributed.init_process_group(
         backend=config.distributed_backend,

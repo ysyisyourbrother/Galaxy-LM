@@ -1,4 +1,6 @@
 import torch
+def clean_up():
+    torch.distributed.destroy_process_group()
 
 def print_rank_0(message):
     """If distributed is initialized, print only on rank 0."""

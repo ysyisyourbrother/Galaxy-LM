@@ -1,7 +1,81 @@
 # galaxy
 Work in progress LLM framework.
 
+## Bert
+**串行**:
+ ``` shell
+ python pretrain_bert.py
+ ```
+ ``` shell
+ python pretrain_bert.py ----config_file ./pretrain_config/bert_config.json
+ ```
+ **Tensor Parallel**
++ 参数:pretrain_config/tp_bert_config.py
+``` shell
+ python pretrain_tp_bert.py --rank 0 --world 2
+ python pretrain_tp_bert.py --rank 1 --world 2
+```
+此时config 划分是默认world_size = 2
+可以用参数`--config_file`指定config
+``` shell
+ python pretrain_tp_bert.py --rank 0 --world 2 --config_file ./pretrain_config/nano_config/tp_bert_config_rank0.json
+ python pretrain_tp_bert.py --rank 1 --world 2 --config_file ./pretrain_config/nano_config/tp_bert_config_rank1.json
+```
+**Data Parallel**:
 
++ 参数:pretrain_config/dp_bert_config.py
+``` shell
+ python pretrain_dp_bert.py --rank 0 --world 2
+ python pretrain_dp_bert.py --rank 1 --world 2
+```
+``` shell
+ python pretrain_dp_bert.py --rank 0 --world 2 --config_file ./pretrain_config/dp_bert_config.json
+ python pretrain_dp_bert.py --rank 1 --world 2 --config_file ./pretrain_config/dp_bert_config.json
+```
+**Sequence Parallel**
++ 参数:pretrain_config/sp_bert_config.py
+``` shell
+ python pretrain_sp_bert.py --rank 0 --world 2
+ python pretrain_sp_bert.py --rank 1 --world 2
+```
+
+
+**Pipeline**
++ 参数:
+  + pretrain_config/pp_bert_config0
+  + pretrain_config/pp_bert_config1
+``` shell
+ python pretrain_pp_bert.py --rank 0 --world 2
+ python pretrain_pp_bert.py --rank 1 --world 2
+```
+**Galaxy**
++ 参数: galaxy_bert_config.py
+``` shell
+ python pretrain_galaxy.py --rank 0 --world 2
+ python pretrain_galaxy.py --rank 1 --world 2
+```
+
+## Nano
+config:  ./pretrain_config/nano_config/
+
+export GLOO_SOCKET_IFNAME=eth0
+
+rank 0 : 192.168.124.4
+
+``` shell
+ python pretrain_tp_bert.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config_rank0.json
+ python pretrain_tp_bert.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config_rank1.json
+ python pretrain_tp_bert.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config_rank2.json
+ python pretrain_tp_bert.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config_rank3.json
+```
+
+``` shell
+ python pretrain_galaxy.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config_rank0.json
+ python pretrain_galaxy.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config_rank1.json
+ python pretrain_galaxy.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config_rank2.json
+ python pretrain_galaxy.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config_rank3.json
+```
+### 模型结构
 BertLayer结构: ATT -- CON 1-- MLP -- CON 2 
 + 进入每个block之前,数据就准备好了
 + 在block离开的时候，执行通信操作，为下一个block准备数据 （但是不是每个block结束的地方都需要通信）
@@ -23,6 +97,7 @@ X执行 copy to all -- ATT 结束 reduce scatter --> CON 结束 all gather --> M
 
 X--ATT (TP) -- CON 1 (SP) -- MLP  (SP) -- CON 2 (SP)  <br>
 X copy to all -- ATT 结束 reduce scatter  -- CON -- MLP -->  CON 结束 all gather --> ATT .... <br>
+
 
 ## LoRA 
 详细介绍:galaxy/loralib/readme.md
