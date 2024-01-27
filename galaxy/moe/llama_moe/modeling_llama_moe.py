@@ -484,7 +484,9 @@ class TopKBalancedNoisyGate(nn.Module):
 
     def forward(self, x):
         # [seq_len, hidden_size] -> [seq_len, expert_num]
+        # print("input_shape:", x.shape)
         logits_gate = self.gate_network(x)
+        # print("logits_gate_shape:", logits_gate.shape)
         # 如果是训练的话会向logits_gate中添加一些noise
         if self.training and self.add_noise:
             noise_mm = self.weight_noise(x)
@@ -494,7 +496,7 @@ class TopKBalancedNoisyGate(nn.Module):
         else:
             logits = logits_gate
 
-        # [seq_len, expert_num] -> [seq_len, k+1]
+        # [seq_len, expert_num] -> [seq_len, k+1] TODO:为什么要+1
         top_logits, top_indices = logits.topk(min(self.num_selects + 1, self.num_experts), dim=1)  # 选择并排序前k+1个权重
         # [seq_len, expert_num] -> [seq_len, k]
         top_k_logits = top_logits[:, :self.num_selects]
@@ -739,7 +741,7 @@ class UniversalCalculator(nn.Module):
     ) -> CalculatorOutput:
         batch_size = topK_indices.size(0)  # topK_indices: (bsz*seq_len, num_selects)
         num_selects = topK_indices.size(1)
-        print(topK_indices.shape)
+        # print(topK_indices.shape)
         # [seq_len, k] -> [seq_len*k]
         topK_indices = topK_indices.flatten()
         topK_scores = topK_scores.flatten()
@@ -1309,7 +1311,7 @@ class LlamaMoEModel(LlamaMoEPreTrainedModel):
                     "`use_cache=True` is incompatible with gradient checkpointing."
                     " Setting `use_cache=False`..."
                 )
-                use_cache = False
+                use_cache = False  
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None

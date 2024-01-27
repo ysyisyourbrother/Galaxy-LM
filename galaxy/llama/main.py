@@ -1,14 +1,11 @@
-# python>=3.10
-
+from transformers import  LlamaTokenizer
+from src.modeling_llama import LlamaForCausalLM
 import torch
-from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
-from llama_moe.modeling_llama_moe import LlamaMoEForCausalLM
 
-
-model_dir = "./llama_moe/"
-tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
+model_dir = "../../../llama-7b-hf/llama_7b_hf_weight"
+tokenizer = LlamaTokenizer.from_pretrained(model_dir)
 with torch.device("cuda:0"):
-    model = AutoModelForCausalLM.from_pretrained(model_dir, torch_dtype=torch.bfloat16, trust_remote_code=True)
+    model = LlamaForCausalLM.from_pretrained(model_dir, torch_dtype=torch.bfloat16)
 model.eval()
 model.to("cuda:0")
 print(model)
