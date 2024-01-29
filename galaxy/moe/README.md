@@ -80,27 +80,9 @@ LlamaMoEForCausalLM(
 ```
 
 
-``` lua
-LlamaMoEForCausalLM(LlamaMoEPreTrainedModel)
-|
-|--LlamaMoEModel(LlamaMoEPreTrainedModel)
-|   |
-|   |--Embedding
-|   |--LlamaMoEDecoderLayer x N 
-|   |  |
-|   |  |--LlamaRMSNorm
-|   |  |--LlamaAttention
-|   |  |--LinearGLUMoELayer(BaseMoELayer) -- 代替MLP
-|   |     |
-|   |     |--TopKBalancedNoisyGate: TopKBalancedNoisyGate(nn.Module)
-|   |     |--LinearGLUExperts
-|         |--Calculator
-|   |
-|   |--LlamaRMSNorm
-|
-|--Linear [hidden_size --> vocab_size]
 
-```
+ 
+
 BaseMoELayer 计算流程
 + 输入经过gate:gate_outputs: dict = self.gate(x)
   ```
@@ -122,16 +104,6 @@ TopKBalancedNoisyGate:
 #  [seq_len, hidden_size] -> [seq_len, expert_num]
 logits_gate = self.gate_network(x)
 ```
-## TODO
-
-需要实现:
-每个layer 增加 predict_gate， 模拟下一个layer的输出
-+ x：当前x
-+ y：下一个gate的  logits_gate
-
-监督学习
-
-
 
 ## Alpaca
 Stanford Alpaca：A Strong，Replicable Instruction-Following Model ：
@@ -165,6 +137,131 @@ python finetune_alpaca.py \
 --tf32 True \
 --report_to "none"
 ```
+
+## llama_moe_predict
+在llama_moe基础上修改
++ 模型: LlamaMoEForCausalLMPredict 每一侧层增加一个self.predict_gate: TopKBalancedNoisyGate （实际上最后一层可以不需要）
++ outputs:增加返回 all_gate_inputs all_gate_outputs 
+finetune代码修改:
++ CustomTrainer继承 transformers.Trainer
+  + 重写compute_loss
+  + 重写save_model
+
+TODO:
++ predict_gate 初始化方式
+
+
+``` bash
+python finetune_predict.py \
+--model_name_or_path ./llama_moe \
+--data_path ./alpaca/mini_data.json \
+--bf16 True \
+--output_dir predict_output \
+--num_train_epochs 1 \
+--per_device_train_batch_size 1 \
+--per_device_eval_batch_size 1 \
+--gradient_accumulation_steps 8 \
+--evaluation_strategy "no" \
+--save_strategy "steps" \
+--save_steps 2000 \
+--save_total_limit 1 \
+--learning_rate 2e-5 \
+--weight_decay 0. \
+--warmup_ratio 0.03 \
+--lr_scheduler_type "cosine" \
+--logging_strategy  "steps" \
+--logging_steps 1 \
+--tf32 True \
+--report_to "none"
+```
+```
+LlamaMoEForCausalLMPredict(
+  (model): LlamaMoEModelPredict(
+    (embed_tokens): Embedding(32000, 4096, padding_idx=0)
+    (layers): ModuleList(
+      (0-31): 32 x LlamaMoEDecoderLayer(
+        (self_attn): LlamaAttention(
+          (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
+          (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
+          (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
+          (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+          (rotary_emb): LlamaRotaryEmbedding()
+        )
+        (input_layernorm): LlamaRMSNorm()
+        (post_attention_layernorm): LlamaRMSNorm()
+        (mlp): LinearGLUMoELayer(
+          (gate): TopKBalancedNoisyGate(
+            (gate_network): Sequential(
+              (0): Linear(in_features=4096, out_features=8, bias=False)
+              (1): Tanh()
+              (2): Linear(in_features=8, out_features=8, bias=False)
+            )
+            (softmax): Softmax(dim=1)
+            (weight_noise): Linear(in_features=4096, out_features=8, bias=False)
+            (softplus): Softplus(beta=1, threshold=20)
+          )
+          (predict_gate): TopKBalancedNoisyGate(
+            (gate_network): Sequential(
+              (0): Linear(in_features=4096, out_features=8, bias=False)
+              (1): Tanh()
+              (2): Linear(in_features=8, out_features=8, bias=False)
+            )
+            (softmax): Softmax(dim=1)
+            (weight_noise): Linear(in_features=4096, out_features=8, bias=False)
+            (softplus): Softplus(beta=1, threshold=20)
+          )
+          (calculator): UniversalCalculator(
+            (experts): LinearGLUExperts(
+              in_features=4096, hidden_features=11008, out_features=4096, hidden_act=silu, num_experts=8, size_experts=[1376, 1376, 1376, 1376, 1376, 1376, 1376, 1376], bias=False
+              (act_fn): SiLUActivation()
+              (weight_gate): ParameterList(
+                  (0): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (1): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (2): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (3): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (4): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (5): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (6): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (7): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+              )
+              (weight_up): ParameterList(
+                  (0): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (1): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (2): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (3): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (4): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (5): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (6): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+                  (7): Parameter containing: [torch.bfloat16 of size 1376x4096 (GPU 0)]
+              )
+              (weight_down): ParameterList(
+                  (0): Parameter containing: [torch.bfloat16 of size 4096x1376 (GPU 0)]
+                  (1): Parameter containing: [torch.bfloat16 of size 4096x1376 (GPU 0)]
+                  (2): Parameter containing: [torch.bfloat16 of size 4096x1376 (GPU 0)]
+                  (3): Parameter containing: [torch.bfloat16 of size 4096x1376 (GPU 0)]
+                  (4): Parameter containing: [torch.bfloat16 of size 4096x1376 (GPU 0)]
+                  (5): Parameter containing: [torch.bfloat16 of size 4096x1376 (GPU 0)]
+                  (6): Parameter containing: [torch.bfloat16 of size 4096x1376 (GPU 0)]
+                  (7): Parameter containing: [torch.bfloat16 of size 4096x1376 (GPU 0)]
+              )
+            )
+          )
+        )
+      )
+    )
+    (norm): LlamaRMSNorm()
+  )
+  (lm_head): Linear(in_features=4096, out_features=32000, bias=False)
+)
+```
+
+
+
+ 
+
+
+
+
 
 
 ---- 

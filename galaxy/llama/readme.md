@@ -39,11 +39,12 @@ LlamaForCausalLM(
 下载
 + alpaca_data.json
 + prompt.txt
+
 note:处理数据时间比较久，测试可以从alpaca_data.json复制几条建一个小的json数据
 ``` bash
 python finetune_alpaca.py \
 --model_name_or_path ../../../llama-7b-hf/llama_7b_hf_weight \
---data_path ./alpaca/mini_data.json \
+--data_path ./alpaca/alpaca_data.json \
 --bf16 True \
 --output_dir output \
 --num_train_epochs 1 \
@@ -60,5 +61,33 @@ python finetune_alpaca.py \
 --lr_scheduler_type "cosine" \
 --logging_steps 1 \
 --tf32 True \
---report_to "none"
+--report_to "none" \
+--logdir ./log
 ```
+部分参数的意义
+https://huggingface.co/docs/transformers/v4.37.1/en/main_classes/trainer#transformers.TrainingArguments 
++ bf16:
+  + bool, optional, defaults to False
+  + bf16 16-bit (mixed) precision training
++ evaluation_strategy: 
+  + str or IntervalStrategy, optional, defaults to "no"
+  + evaluation strategy to adopt during training
++ gradient_accumulation_steps: 
+  + int, optional, defaults to 1
+  + Number of updates steps to accumulate the gradients for, before performing a backward/update pass.
+  +  logging, evaluation, save will be conducted every gradient_accumulation_steps * xxx_step training examples
+
++ save_steps  
+  + int or float, optional, defaults to 500
+  + Number of updates steps before two checkpoint saves if save_strategy="steps". 
+  + Should be an integer or a float in range [0,1). If smaller than 1, will be interpreted as ratio of total training steps.
++ save_total_limit 
+  + int, optional 
+  + If a value is passed, will limit the total amount of checkpoints. 
+
++ logging_steps 
+  + int or float, optional, defaults to 500 
+  + Number of update steps between two logs if logging_strategy="steps". Should be an integer or a float in range [0,1). If smaller than 1, will be interpreted as ratio of total training steps.
++ report_to 
+  + str or List[str], optional, defaults to "all" 
+  + The list of integrations to report the results and logs to. Supported platforms are "azure_ml", "clearml", "codecarbon", "comet_ml", "dagshub", "dvclive", "flyte", "mlflow", "neptune", "tensorboard", and "wandb". Use "all" to report to all integrations installed, "none" for no integrations.

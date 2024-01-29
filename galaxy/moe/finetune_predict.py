@@ -15,20 +15,25 @@
 import copy
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence,Tuple
 import torch
+import torch.nn as nn
 from torch.utils.data import Dataset
 import transformers
 from transformers import Trainer
 from transformers import  AutoTokenizer
-from llama_moe.modeling_llama_moe import LlamaMoEForCausalLM
+from llama_moe_predict.modeling_llama_moe_with_predict import LlamaMoEForCausalLMPredict
+from torch.utils.tensorboard import SummaryWriter
 
 import sys 
 import alpaca.utils as utils
 from  alpaca.utils  import get_parameter_number
 
 import time
+import datetime
 from datetime import timedelta
+device = "cuda"
+ 
 
 IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
@@ -193,11 +198,87 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
+ 
+writer = SummaryWriter('./logs/%s/' % datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+def init_predict_gate (model):
+    #用下一层gate初始化当前层的predict_gate
+    print("init predict gate with next layer's gate")
+    num_hidden_layers = model.config.num_hidden_layers
+    for i in range(num_hidden_layers-1):
+        model.model.layers[i].mlp.predict_gate.gate_network.load_state_dict(model.model.layers[i+1].mlp.gate.gate_network.state_dict())
 
-def get_parameter_number(model):
-    total_num = sum(p.numel() for p in model.parameters())
-    trainable_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    return {'Total': total_num, 'Trainable': trainable_num} 
+def compute_predict_score (layer, predict, target, num_experts, num_selects):
+    _, top_indices_predict = predict.topk(min(num_selects + 1,  num_experts), dim=1)  # 选择并排序前k+1个权重
+    top_k_indices_predict = top_indices_predict[:, :num_selects]
+    
+    _, top_indices_target = target.topk(min(num_selects + 1,  num_experts), dim=1)  # 选择并排序前k+1个权重
+    top_k_indices_target = top_indices_target[:, :num_selects]
+    # 统计每一行中 predict 中的元素在对应行中的 target 中的个数
+    counts = []
+    for i in range(top_k_indices_predict.size(0)):
+        # 一个token预测对的数量 
+        row_count = torch.sum(torch.isin(top_k_indices_predict[i], top_k_indices_target[i])).item()
+        counts.append(row_count)
+       
+    ratio = [i / num_selects for i in counts]
+    avg_ratio =  sum(ratio)/ len(ratio)
+    # avg_ratio,sum(counts),top_indices_target.numel()
+    print("ratio = ",ratio)
+    print("avg_ratio_layer {} = {}, num_of_right_predict = {}, total = {}".format(layer,avg_ratio, sum(counts), top_k_indices_target.numel()))
+    writer.add_scalar("avg_ratio_layer_{}".format(layer), avg_ratio)
+    # writer.add_scalar("layer_{}_right_predict".format(layer), sum(counts))
+    # writer.add_scalar("layer_{}_total".format(layer), top_k_indices_target.numel())
+    writer.add_scalar("correct_predict_ratio_layer_{}".format(layer), sum(counts) / top_k_indices_target.numel())
+
+class CustomTrainer(Trainer):
+    '''
+    rewrite compute_loss
+    e.g.
+        def compute_loss(self, model, inputs, return_outputs=False):
+            labels = inputs.pop("labels")
+            # forward pass
+            outputs = model(**inputs)
+            logits = outputs.get("logits")
+            # compute custom loss (suppose one has 3 labels with different weights)
+            loss_fct = nn.CrossEntropyLoss(weight=torch.tensor([1.0, 2.0, 3.0], device=model.device))
+            loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
+            return (loss, outputs) if return_outputs else loss
+    '''
+    def compute_loss(self, model, inputs, return_outputs=False):
+        outputs = model(**inputs)
+        all_gate_inputs: Optional[Tuple[torch.FloatTensor]] = outputs.get("all_gate_inputs", None)
+        all_gate_outputs: Optional[Tuple[torch.FloatTensor]] = outputs.get("all_gate_outputs", None)
+        assert all_gate_inputs is not None and all_gate_outputs is not None, "all_gate_inputs and all_gate_outputs must be specified"
+        num_layers = len(all_gate_inputs)
+        loss = 0.0
+        for i in range(num_layers-1):
+            x = all_gate_inputs[i].to(torch.bfloat16)
+            target = all_gate_outputs[i+1].to(torch.bfloat16)
+            y = model.model.layers[i].mlp.predict_gate.gate_network(x)
+            criterion =  nn.MSELoss()
+            layer_loss = criterion(y, target)
+            loss += layer_loss
+            print("loss_layer_{} = {}".format(i, loss.item()))
+            writer.add_scalar("loss_layer_{}".format(i), layer_loss.item() )
+            compute_predict_score(i, y, target, model.config.num_experts, model.config.num_selects)
+        writer.add_scalar("total_loss" , loss.item() )
+        return (loss, outputs) if return_outputs else loss
+  
+    
+    def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
+        '''
+        only save trainabel parameters
+        currently only predict_gate
+        '''
+        assert output_dir is not None, "output_dir must be specified"
+        full_state_dict = self.model.state_dict()
+        # 提取需要保存的模块的权重
+        module_to_save_state = {k: v for k, v in full_state_dict.items() if 'predict_gate' in k}
+        new_state_dict = { k: v for k, v in module_to_save_state.items()}
+        print("save model: ","predict_gate")
+        self._save(output_dir, state_dict=new_state_dict)
+
+
 
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
@@ -211,18 +292,21 @@ def train():
     )
     print("finish load tokenizer")
     start_time = time.time()
-    with torch.device("cuda"):
-        model = LlamaMoEForCausalLM.from_pretrained(model_args.model_name_or_path, torch_dtype=torch.bfloat16)
-    model.to("cuda")
+    with torch.device( device):
+        model = LlamaMoEForCausalLMPredict.from_pretrained(model_args.model_name_or_path, torch_dtype=torch.bfloat16)
+    model.to(device)
     elapse_time = timedelta(seconds=int(round( time.time() - start_time )))
     print("finish load model, time cost: ", elapse_time)
     print(get_parameter_number(model))
     
     for name, param in model.named_parameters():
-        if "lm_head" not in name:  # Assuming "lm_head" is part of the lm_head parameters' names
+        if "predict_gate" not in name:  #  除了predict_gate
             param.requires_grad = False
     print(get_parameter_number(model))
     
+    init_predict_gate(model)
+    # load predict_gate
+    # model.load_state_dict(torch.load("./predict_output/pytorch_model.bin"))
     special_tokens_dict = dict()
     if tokenizer.pad_token is None:
         special_tokens_dict["pad_token"] = DEFAULT_PAD_TOKEN
@@ -244,7 +328,8 @@ def train():
     elapse_time = timedelta(seconds=int(round( time.time() - start_time )))
     print("finish preparing data, time cost: ", elapse_time)
     # prepare trainer, data_module里面有train_dataset，eval_dataset，data_collator
-    trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    trainer = CustomTrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    # trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
     print("begin traning")
     trainer.train()
     trainer.save_state()

@@ -7,7 +7,7 @@ Work in progress LLM framework.
  python pretrain_bert.py
  ```
  ``` shell
- python pretrain_bert.py ----config_file ./pretrain_config/bert_config.json
+ python pretrain_bert.py --config_file ./pretrain_config/bert_config.json
  ```
  **Tensor Parallel**
 + 参数:pretrain_config/tp_bert_config.py

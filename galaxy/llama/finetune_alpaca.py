@@ -192,10 +192,9 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
-def get_parameter_number(model):
-    total_num = sum(p.numel() for p in model.parameters())
-    trainable_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    return {'Total': total_num, 'Trainable': trainable_num} 
+        
+        
+
 
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
@@ -217,8 +216,8 @@ def train():
     print(get_parameter_number(model))
     
     for name, param in model.named_parameters():
-        if "lm_head" not in name:  # Assuming "lm_head" is part of the lm_head parameters' names
-            param.requires_grad = False
+        # if "lm_head" not in name:  # Assuming "lm_head" is part of the lm_head parameters' names
+        param.requires_grad = False
     print(get_parameter_number(model))
     
     special_tokens_dict = dict()
