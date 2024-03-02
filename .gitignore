@@ -1,5 +1,23 @@
 # bin
 *.bin
+*.ipynb
+*.txt
+tmp/*
+# galaxy/moe
+
+**/*output*/*
+**/*log*/*
+galaxy/moe/plot/
+ 
+ 
+
+galaxy/llama/alpaca/*
+!galaxy/llama/alpaca/utils.py
+galaxy/moe/alpaca/*
+!galaxy/moe/alpaca/utils.py
+# galaxy/llama
+galaxy/llama/output/
+ 
 
 # Dataset
 dataset/*

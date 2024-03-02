@@ -27,6 +27,10 @@
     "vocab_size": 21128,
     "init_method": "tcp://127.0.0.1:23000",
     "distributed_backend": "gloo",
+    "seq_scatter_list": [
+        20,
+        12
+    ],
     "use_lora": false,
     "lora_att_dim": 4,
     "lora_alpha": 32,

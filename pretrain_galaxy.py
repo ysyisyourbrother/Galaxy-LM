@@ -69,8 +69,10 @@ if __name__ == '__main__':
         model.eval()
         print("Start inferencing")
     # TODO: 将优化器调整为分布式优化
+    start_time = time.time()
     optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
     for i in range(config.num_epochs):
+        print("epoch: ",i)
         for i, (trains, labels) in enumerate(train_iter):
             outputs = model(trains)
             if config.train:
@@ -81,7 +83,7 @@ if __name__ == '__main__':
             
             # print(f"finish {i} iteration.")
         # break
-    print("Finish training")
+    print("Finish...")
     time_usage = get_time_dif(start_time)
     print(time_usage)
     print(f"{time_usage.seconds} (seconds)")

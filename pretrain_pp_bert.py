@@ -1,11 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.parallel import DistributedDataParallel as DDP
-
 import time
-import importlib
-
 # from pretrain_config.pp_bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.pp_bert_model as bert_model
@@ -24,55 +20,43 @@ if args.rank == 0:
 else:
     from pretrain_config.pp_bert_config1 import config
 
-class StageModel0(nn.Module):
+class StageModel(nn.Module):
     def __init__(self, config):
-        super(StageModel0, self).__init__()
+        super(StageModel, self).__init__()
         self.bert = bert_model.PPBertModel(config)
-        if not config.use_lora or config.lora_att_dim == 0:
-            print("not use lora, train full parameters")
-            for param in self.bert.parameters():
-                param.requires_grad = True
-        else:
-            print("use lora")
-            mark_only_lora_as_trainable(self.bert)
-        # 最后用一个全连接层将提取到的特征转化为num_class个值
-        self.fc = nn.Linear(config.hidden_size, config.num_classes)
-
-    def forward(self, x):
-        # x: (token_ids, int(label), seq_len, mask)
-        context, mask = x[0], x[2]
-        encoded_layers, _ = self.bert(context, attention_mask=mask, output_all_encoded_layers=False)
-        return encoded_layers
-
-class StageModel1(nn.Module):
-    def __init__(self, config):
-        super(StageModel1, self).__init__()
         self.config = config
-        self.bert = bert_model.PPBertModel(config)
+        if config.post_process: # 最后一个stage，有FC 分类层
+            self.fc = nn.Linear(config.hidden_size, config.num_classes)
+ 
         if not config.use_lora or config.lora_att_dim == 0:
             print("not use lora, train full parameters")
             for param in self.bert.parameters():
                 param.requires_grad = True
         else:
-            print("use lora")
+            print("use lora, mark_only_lora_as_trainable")
             mark_only_lora_as_trainable(self.bert)
-        # 最后用一个全连接层将提取到的特征转化为num_class个值
-        self.fc = nn.Linear(config.hidden_size, config.num_classes)
-
+    
     def forward(self, x):
         # x: (token_ids, int(label), seq_len, mask)
-        # TODO: 如何将inputs id 或attention mask从第一个stage传递到后面？
-        input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
-        _, pooled = self.bert(input_ids, encoder_input=x, output_all_encoded_layers=False)
-        out = self.fc(pooled)
-        return out
-
+        if config.pre_process: # 第一个stage
+            context, mask = x[0], x[2]
+            encoded_layers, _ = self.bert(context, attention_mask=mask, output_all_encoded_layers=False)
+            return encoded_layers
+        elif config.post_process: #最后一个stage 经过分类层
+            input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
+            _, pooled = self.bert(input_ids, encoder_input=x, output_all_encoded_layers=False)
+            out = self.fc(pooled)
+            return out
+        else: #中间stage
+            input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
+            encoded_layers, _ = self.bert(input_ids, encoder_input=x, output_all_encoded_layers=False)
+            return encoded_layers
 
 if __name__ == '__main__':
     # Initial Galaxy, args
     initialize_galaxy(config)
     args = get_args()
-
+    config.print_config()
     # Prapare Tokenizer
     tokenizer = BertTokenizer.from_pretrained(config.vocab_path)
 
@@ -88,15 +72,13 @@ if __name__ == '__main__':
     print("Time usage:", time_dif)
 
     # Prepare Model
-    if args.rank == 0:
-        Model = StageModel0
-    elif args.rank == 1:
-        Model = StageModel1
-    
-    model = Model(config).to(config.device)
-    model.train()
-    print('number of bert parameters:', get_parameter_number(model.bert)) 
-    print('number of fc parameters:', get_parameter_number(model.fc)) 
+    model = StageModel(config).to(config.device)
+    if config.train:
+        model.train()
+        print('number of model parameters:', get_parameter_number(model)) 
+    else:
+        model.eval()
+        print("Start inferencing")
     # Prepare PipelineRuntime
     runtime = PipelineRuntime(config, 
                               model, 
@@ -105,8 +87,12 @@ if __name__ == '__main__':
                               optimizer=torch.optim.SGD, 
                               lr=0.01, 
                               if_cuda=True)
-
-    training_iteration = 1
+    start_time = time.time()
+    training_iteration = 4
     for i in range(training_iteration):
         runtime.forward_backward_pipelining()
-    clean_up()
+    print("Finish...")
+    time_usage = get_time_dif(start_time)
+    print(time_usage)
+    print(f"{time_usage.seconds} (seconds)")
+    # clean_up() TODO:会Aborted (core dumped)

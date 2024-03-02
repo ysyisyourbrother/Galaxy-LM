@@ -5,8 +5,6 @@ import json
 class BertConfig():
     def __init__(self):
         ''' Data Configuration '''
-        # 长截短补
-        self.pad_size = 32
         # 训练、验证、测试集数据路径
         self.train_path = "dataset/THUCNews/data/train.txt"
         self.dev_path = "dataset/THUCNews/data/dev.txt"
@@ -14,6 +12,7 @@ class BertConfig():
         self.vocab_path = "dataset/THUCNews/vocab.txt"
 
         ''' Training Configuration '''
+        self.train = True
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备
         self.num_epochs = 3                                             # epoch数
         self.batch_size = 10                                           # mini-batch大小
@@ -39,7 +38,7 @@ class BertConfig():
         self.hidden_size = 768
         self.intermediate_size = 4*self.hidden_size                # MLP层两个dense层中间的intermediate state大小
         self.num_attention_heads = 12
-        self.num_hidden_layers = 12
+        self.num_hidden_layers = 3
         self.att_head_size = int(self.hidden_size/self.num_attention_heads)
 
         # 词表
@@ -59,13 +58,14 @@ class BertConfig():
             raise FileNotFoundError("config file: {} not found".format(config_file))
         with open(config_file, "r") as f:
             config_dict = json.load(f)
+            print("========== Updating config from file: ", config_file,"==========")
                 # Data Configuration
-        self.pad_size = config_dict["pad_size"]
         self.train_path = config_dict["train_path"]
         self.dev_path = config_dict["dev_path"]
         self.test_path = config_dict["test_path"]
         self.vocab_path = config_dict["vocab_path"]
         # Training Configuration
+        self.train = config_dict["train"]
         self.device = config_dict["device"]
         if self.device == "cuda":
             self.device =  torch.device('cuda' if torch.cuda.is_available() else 'cpu') 

@@ -5,9 +5,7 @@ import json
 class BertConfig():
     def __init__(self):
         ''' Data Configuration '''
-        # 长截短补
         print("This is config for world_size = 2")
-        self.pad_size = 32
         # 训练、验证、测试集数据路径
         self.train_path = "dataset/THUCNews/data/train.txt"
         self.dev_path = "dataset/THUCNews/data/dev.txt"
@@ -15,6 +13,7 @@ class BertConfig():
         self.vocab_path = "dataset/THUCNews/vocab.txt"
 
         ''' Training Configuration '''
+        self.train = True
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备
         self.num_epochs = 3                                             # epoch数
         self.batch_size = 10                                           # mini-batch大小
@@ -50,7 +49,7 @@ class BertConfig():
         ''' Distributed Configuration '''
         self.tp_num_attention_heads = int(self.num_attention_heads/2)      # 张量并行环境下当前rank有多少个heads
         self.tp_intermediate_size = int(self.intermediate_size/2)             # TP下MLP两个dense层中间的intermediate state大小
-        self.init_method = 'tcp://192.168.124.4:23000'                            # torch.dist.init_process_group中使用的master device    
+        self.init_method ="tcp://127.0.0.1:23000"                          # torch.dist.init_process_group中使用的master device    
         self.distributed_backend = "gloo"
         
         # lora
@@ -66,13 +65,14 @@ class BertConfig():
             raise FileNotFoundError("config file: {} not found".format(config_file))
         with open(config_file, "r") as f:
             config_dict = json.load(f)
+            print("==========Updating config from file: ", config_file,"==========")
         # Data Configuration
-        self.pad_size = config_dict["pad_size"]
         self.train_path = config_dict["train_path"]
         self.dev_path = config_dict["dev_path"]
         self.test_path = config_dict["test_path"]
         self.vocab_path = config_dict["vocab_path"]
         # Training Configuration
+        self.train = config_dict["train"]
         self.device = config_dict["device"]
         if self.device == "cuda":
             self.device =  torch.device('cuda' if torch.cuda.is_available() else 'cpu') 

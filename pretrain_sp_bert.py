@@ -38,7 +38,7 @@ class Model(nn.Module):
 if __name__ == '__main__':
     # Initial Galaxy, args
     initialize_galaxy(config)
-
+    config.print_config()
     # Prapare Tokenizer
     tokenizer = BertTokenizer.from_pretrained(config.vocab_path)
 
@@ -56,18 +56,28 @@ if __name__ == '__main__':
     model = Model(config).to(config.device)
 
     # Train
-    model.train()
-    print('number of bert parameters:', get_parameter_number(model.bert)) 
-    
+    if config.train:
+        model.train()
+        print('number of bert parameters:', get_parameter_number(model.bert)) 
+        print('number of fc parameters:', get_parameter_number(model.fc)) 
+        print("Start training")
+    else:
+        model.eval()
+        print("Start inferencing")
     # TODO: 将优化器调整为分布式优化
     optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
     for i, (trains, labels) in enumerate(train_iter):
         outputs = model(trains)
-        model.zero_grad()
-        loss = F.cross_entropy(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        
-        print(f"finish {i} iteration.")
-        break
+        if config.train:
+            model.zero_grad()
+            loss = F.cross_entropy(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            
+        # print(f"finish {i} iteration.")
+        # break
+    print("Finish...")
+    time_usage = get_time_dif(start_time)
+    print(time_usage)
+    print(f"{time_usage.seconds} (seconds)")
     clean_up()

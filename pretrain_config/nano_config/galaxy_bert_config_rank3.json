@@ -1,5 +1,4 @@
 {
-    "pad_size": 32,
     "train_path": "dataset/THUCNews/data/train.txt",
     "dev_path": "dataset/THUCNews/data/dev.txt",
     "test_path": "dataset/THUCNews/data/test.txt",
@@ -9,6 +8,7 @@
     "num_epochs": 1,
     "batch_size": 10,
     "learning_rate": 5e-5,
+    "pad_size": 32,
     "attention_probs_dropout_prob": 0.1,
     "directionality": "bidi",
     "hidden_act": "gelu",

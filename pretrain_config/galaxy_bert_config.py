@@ -7,7 +7,6 @@ class BertConfig():
         ''' Data Configuration '''
         # 长截短补
         print("This is config for world_size = 2")
-        self.pad_size = 32
         # 训练、验证、测试集数据路径
         self.train_path = "dataset/THUCNews/data/train.txt"
         self.dev_path = "dataset/THUCNews/data/dev.txt"
@@ -17,9 +16,10 @@ class BertConfig():
         ''' Training Configuration '''
         self.train = True
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备
-        self.num_epochs = 1                                             # epoch数
+        self.num_epochs = 3                                             # epoch数
         self.batch_size = 10                                           # mini-batch大小                                      
         self.learning_rate = 5e-5       
+        self.pad_size = 32 #   每句话处理成的长度(短填长切)
         self.class_list = [x.strip() for x in open(
             "dataset/THUCNews/data/class.txt").readlines()]                                # 类别名单
         self.num_classes = len(self.class_list)                         # 类别数
@@ -47,21 +47,21 @@ class BertConfig():
         self.vocab_size = 21128
 
         ''' Distributed Configuration '''
-        # CON: SP
-        self.con_parallel_method = "SP"  # 
+        # CON: SP / None
+        self.con_parallel_method = "None"  # 
         self.seq_scatter_list = [20,12] 
         # ATT:TP 
         self.att_parallel_method = "TP"
         self.tp_num_attention_heads = int(self.num_attention_heads/2)      # 张量并行环境下当前rank有多少个heads
         # MLP:TP
-        self.mlp_parallel_method = "TP"
+        self.mlp_parallel_method = "SP"
         self.tp_intermediate_size = int(self.intermediate_size/2 )            # TP下MLP两个dense层中间的intermediate state大小
         # init process
-        self.init_method = "tcp://192.168.124.4:23000"                         # torch.dist.init_process_group中使用的master device    
+        self.init_method = "tcp://127.0.0.1:23000"                         # torch.dist.init_process_group中使用的master device    
         self.distributed_backend = "gloo"
         
         # lora
-        self.use_lora = True
+        self.use_lora = False
         self.lora_att_dim = 4
         self.lora_alpha = 32
         self.lora_dropout = 0.1
@@ -73,6 +73,7 @@ class BertConfig():
             raise FileNotFoundError("config file: {} not found".format(config_file))
         with open(config_file, "r") as f:
             config_dict = json.load(f)
+            
         # Data Configuration
         self.pad_size = config_dict["pad_size"]
         self.train_path = config_dict["train_path"]

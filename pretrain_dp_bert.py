@@ -12,16 +12,23 @@ from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.initialize import initialize_galaxy
 from galaxy.utils import clean_up
 from galaxy.global_vars import get_args
+from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
+
 
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
         self.bert = bert_model.BertModel(config)
-        for param in self.bert.parameters():
-            param.requires_grad = True
+        if not config.use_lora or config.lora_att_dim == 0:
+            print("not use lora, train full parameters")
+            for param in self.bert.parameters():
+                param.requires_grad = True
+        else:
+            print("use lora")
+            mark_only_lora_as_trainable(self.bert)
         # 最后用一个全连接层将提取到的特征转化为num_class个值
         self.fc = nn.Linear(config.hidden_size, config.num_classes)
-
+    
     def forward(self, x):
         # 每一个input的维度：(token_ids, int(label), seq_len, mask)
         context = x[0]
@@ -51,21 +58,35 @@ if __name__ == '__main__':
 
     # Prepare Model
     model = Model(config).to(config.device)
-    model.train()
+    # Train
+    if config.train:
+        model.train()
+        print('number of bert parameters:', get_parameter_number(model.bert)) 
+        print('number of fc parameters:', get_parameter_number(model.fc)) 
+        print("Start training")
+     
+    else:
+        model.eval()
+        print("Start inferencing")
 
     # Prepare DDP Model 因为每台机器只有一块GPU，所以设备ID始终是0。
     ddp_model = DDP(model, device_ids=[0])
 
     # TODO: 使用更合适的优化器
+    start_time = time.time()
     optimizer = torch.optim.SGD(ddp_model.parameters(), lr=config.learning_rate)
-    for i, (trains, labels) in enumerate(train_iter):
-        outputs = ddp_model(trains)
-        ddp_model.zero_grad()
-        loss = F.cross_entropy(outputs, labels)
-        loss.backward()
-        # 这里的操作会触发DDP进行梯度同步
-        optimizer.step()
-        
-        print("finish one iteration.")
-        break
+    for i in range(config.num_epochs):
+        print("epoch: ",i)
+        for i, (trains, labels) in enumerate(train_iter):
+            outputs = model(trains)
+            if config.train:
+                model.zero_grad()
+                loss = F.cross_entropy(outputs, labels)
+                loss.backward()
+                optimizer.step()
     clean_up()
+    print("Finish...")
+    time_usage = get_time_dif(start_time)
+    print(time_usage)
+    print(f"{time_usage.seconds} (seconds)")
+    # clean_up()
