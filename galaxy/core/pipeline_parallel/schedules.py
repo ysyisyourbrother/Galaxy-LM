@@ -109,7 +109,7 @@ class PipelineRuntime():
 
     def run_backward(self):
         self.num_backward_micro_batch += 1
-        print(f"start backward of microbatch {self.num_backward_micro_batch}")
+        print(f"stage {self.config.stage } start backward of microbatch {self.num_backward_micro_batch}")
         # 先进行BP的micro-batch一定是先执行FP的
         tensors = self.tensors.pop(0)
 

@@ -62,8 +62,7 @@ python pretrain_bert.py --config_file ./pretrain_config/bert_config.json
 **Pipeline**
 
 - 参数:
-  - pretrain_config/pp_bert_config0
-  - pretrain_config/pp_bert_config1
+  - pretrain_config/pp_bert_config
 
 ```shell
  python pretrain_pp_bert.py --rank 0 --world 2
@@ -71,8 +70,8 @@ python pretrain_bert.py --config_file ./pretrain_config/bert_config.json
 ```
 
 ```shell
- python pretrain_pp_bert.py --rank 0 --world 2 --config_file ./pretrain_config/pp_bert_config0.json
- python pretrain_pp_bert.py --rank 1 --world 2 --config_file ./pretrain_config/pp_bert_config1.json
+ python pretrain_pp_bert.py --rank 0 --world 2 --config_file ./pretrain_config/pp_bert_config.json
+ python pretrain_pp_bert.py --rank 1 --world 2 --config_file ./pretrain_config/pp_bert_config.json
 ```
 
 **Galaxy**
@@ -104,10 +103,10 @@ rank 0 : 192.168.124.4
 | 10         |   32    |   5   |      18       |
 
 ```shell
- python pretrain_tp_bert.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config_rank0.json
- python pretrain_tp_bert.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config_rank1.json
- python pretrain_tp_bert.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config_rank2.json
- python pretrain_tp_bert.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config_rank3.json
+ python pretrain_tp_bert.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config.json
+ python pretrain_tp_bert.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config.json
+ python pretrain_tp_bert.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config.json
+ python pretrain_tp_bert.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config.json
 ```
 
 ```shell
@@ -117,41 +116,11 @@ rank 0 : 192.168.124.4
  python pretrain_galaxy.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config_rank3.json
 ```
 
-TODO:
-start forward of microbatch 1
-Exception in thread Thread-3:
-Traceback (most recent call last):
-File "/home/brandonye/miniforge3/envs/py36/lib/python3.6/threading.py", line 916, in \_bootstrap_inner
-self.run()
-File "/home/brandonye/miniforge3/envs/py36/lib/python3.6/threading.py", line 864, in run
-self.\_target(\*self.\_args, \*\*self.\_kwargs)
-File "/home/brandonye/CodeSpace/Galaxy-LM/galaxy/core/pipeline_parallel/communication.py", line 104, in recv_helper_thread
-tensor = \_recv(tensor_shape, src_rank, tag)
-File "/home/brandonye/CodeSpace/Galaxy-LM/galaxy/core/pipeline_parallel/communication.py", line 128, in \_recv
-dist.recv(tensor, src=src_rank, tag=tag)
-File "/home/brandonye/miniforge3/envs/py36/lib/python3.6/site-packages/torch/distributed/distributed_c10d.py", line 976, in recv
-pg.recv([tensor], src, tag).wait()
-RuntimeError: [/media/nvidia/NVME/pytorch/pytorch-v1.10.0/third_party/gloo/gloo/transport/tcp/pair.cc:598] Connection closed by peer [192.168.124.7]:64397
-
-Exception in thread Thread-5:
-Traceback (most recent call last):
-File "/home/brandonye/miniforge3/envs/py36/lib/python3.6/threading.py", line 916, in \_bootstrap_inner
-self.run()
-File "/home/brandonye/miniforge3/envs/py36/lib/python3.6/threading.py", line 864, in run
-self.\_target(\*self.\_args, \*\*self.\_kwargs)
-File "/home/brandonye/CodeSpace/Galaxy-LM/galaxy/core/pipeline_parallel/communication.py", line 104, in recv_helper_thread
-tensor = \_recv(tensor_shape, src_rank, tag)
-File "/home/brandonye/CodeSpace/Galaxy-LM/galaxy/core/pipeline_parallel/communication.py", line 128, in \_recv
-dist.recv(tensor, src=src_rank, tag=tag)
-File "/home/brandonye/miniforge3/envs/py36/lib/python3.6/site-packages/torch/distributed/distributed_c10d.py", line 976, in recv
-pg.recv([tensor], src, tag).wait()
-RuntimeError: [/media/nvidia/NVME/pytorch/pytorch-v1.10.0/third_party/gloo/gloo/transport/tcp/pair.cc:598] Connection closed by peer [192.168.124.17]:52654
-
 ```shell
- python pretrain_pp_bert.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config_rank0.json
- python pretrain_pp_bert.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config_rank1.json
- python pretrain_pp_bert.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config_rank2.json
- python pretrain_pp_bert.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config_rank3.json
+ python pretrain_pp_bert.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config.json
+ python pretrain_pp_bert.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config.json
+ python pretrain_pp_bert.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config.json
+ python pretrain_pp_bert.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config.json
 ```
 
 ### 模型结构

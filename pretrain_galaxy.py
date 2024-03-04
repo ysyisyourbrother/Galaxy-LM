@@ -9,6 +9,7 @@ from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.galaxy_bert_model as galaxy_bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.initialize import initialize_galaxy
+from galaxy.global_vars import get_args
 from galaxy.utils import clean_up
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
 
@@ -39,6 +40,8 @@ class Model(nn.Module):
 if __name__ == '__main__':
     # Initial Galaxy, args
     initialize_galaxy(config)
+    args = get_args()
+    config.update_galaxy_config(args)
     config.print_config()
     # Prapare Tokenizer
     tokenizer = BertTokenizer.from_pretrained(config.vocab_path)

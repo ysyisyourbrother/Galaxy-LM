@@ -31,9 +31,9 @@
         12
     ],
     "att_parallel_method": "TP",
-    "tp_num_attention_heads": 6,
-    "mlp_parallel_method": "SP",
-    "tp_intermediate_size": 1536,
+    "tp_num_attention_heads_list": [6,6],
+    "mlp_parallel_method": "TP",
+    "tp_intermediate_size_list": [1536,1536],
     "init_method": "tcp://127.0.0.1:23000",
     "distributed_backend": "gloo",
     "use_lora": false,

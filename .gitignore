@@ -1,23 +1,9 @@
 # bin
 *.bin
 *.ipynb
-*.txt
+
 tmp/*
-# galaxy/moe
 
-**/*output*/*
-**/*log*/*
-galaxy/moe/plot/
- 
- 
-
-galaxy/llama/alpaca/*
-!galaxy/llama/alpaca/utils.py
-galaxy/moe/alpaca/*
-!galaxy/moe/alpaca/utils.py
-# galaxy/llama
-galaxy/llama/output/
- 
 
 # Dataset
 dataset/*
@@ -25,6 +11,7 @@ dataset/*
 
 # script
 sync.sh
+galaxy/llama/scripts/*
 
 # vscode
 .vscode
@@ -189,3 +176,25 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+
+# FireAct
+galaxy/FireAct/tools/*.json
+galaxy/FireAct/trajs/*
+galaxy/FireAct/finetune/llama_full/tblogs/*
+galaxy/FireAct/finetune/llama_lora/tblogs/*
+# galaxy/moe
+**/*output*/*
+**/*log*/*
+galaxy/moe/plot/
+galaxy/llama/alpaca/*
+!galaxy/llama/alpaca/utils.py
+galaxy/moe/alpaca/*
+!galaxy/moe/alpaca/utils.py
+galaxy/moe/log.py
+# galaxy/llama
+galaxy/llama/output/
+
+exclude-file.txt
+galaxy/moe/res_init.txt
+galaxy/moe/res.txt

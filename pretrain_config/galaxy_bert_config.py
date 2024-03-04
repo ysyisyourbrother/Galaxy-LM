@@ -52,10 +52,16 @@ class BertConfig():
         self.seq_scatter_list = [20,12] 
         # ATT:TP 
         self.att_parallel_method = "TP"
-        self.tp_num_attention_heads = int(self.num_attention_heads/2)      # 张量并行环境下当前rank有多少个heads
+        self.tp_num_attention_heads_list =[ int(self.num_attention_heads/2) ,  int(self.num_attention_heads/2)]       # 张量并行环境下当前rank有多少个heads
+        self.tp_num_attention_heads = None
         # MLP:TP
         self.mlp_parallel_method = "SP"
-        self.tp_intermediate_size = int(self.intermediate_size/2 )            # TP下MLP两个dense层中间的intermediate state大小
+        self.tp_intermediate_size_list =[int(self.intermediate_size/2)  ,  int(self.intermediate_size/2)]               # TP下MLP两个dense层中间的intermediate state大小
+        self.tp_intermediate_size = None
+        if (sum(self.tp_num_attention_heads_list) != self.num_attention_heads):
+            raise ValueError("Sum of tp_num_attention_heads_list must equal to num_attention_heads")
+        if (sum(self.tp_intermediate_size_list) != self.intermediate_size):
+            raise ValueError("Sum of tp_intermediate_size_list must equal to intermediate_size")
         # init process
         self.init_method = "tcp://127.0.0.1:23000"                         # torch.dist.init_process_group中使用的master device    
         self.distributed_backend = "gloo"
@@ -115,10 +121,14 @@ class BertConfig():
         self.seq_scatter_list = config_dict["seq_scatter_list"]
         # ATT:TP
         self.att_parallel_method = config_dict["att_parallel_method"]
-        self.tp_num_attention_heads = config_dict["tp_num_attention_heads"]
+        self.tp_num_attention_heads_list = config_dict["tp_num_attention_heads_list"]
         # MLP:TP
         self.mlp_parallel_method = config_dict["mlp_parallel_method"]
-        self.tp_intermediate_size = config_dict["tp_intermediate_size"]
+        self.tp_intermediate_size_list = config_dict["tp_intermediate_size_list"]
+        if (sum(self.tp_num_attention_heads_list) != self.num_attention_heads):
+            raise ValueError("Sum of tp_num_attention_heads_list must equal to num_attention_heads")
+        if (sum(self.tp_intermediate_size_list) != self.intermediate_size):
+            raise ValueError("Sum of tp_intermediate_size_list must equal to intermediate_size")
         # init process
         self.init_method = config_dict["init_method"]
         self.distributed_backend = config_dict["distributed_backend"]
@@ -130,9 +140,14 @@ class BertConfig():
         self.fan_in_fan_out = config_dict["fan_in_fan_out"]
         self.merge_weights = config_dict["merge_weights"]
         
-  
+
     def print_config(self):
         for k,v in self.__dict__.items():
             print(k,v)
-
+    def update_galaxy_config(self, args):
+        rank = args.rank
+        world = args.world
+        self.tp_num_attention_heads = self.tp_num_attention_heads_list[rank]
+        self.tp_intermediate_size = self.tp_intermediate_size_list[rank]
+        
 config = BertConfig()

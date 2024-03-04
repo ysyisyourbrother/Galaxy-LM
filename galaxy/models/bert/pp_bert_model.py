@@ -121,7 +121,7 @@ class PPBertEncoder(nn.Module):
     def __init__(self, config):
         super(PPBertEncoder, self).__init__()
         layer = PPBertLayer(config)
-        self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
+        self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_pp_hidden_layers)])
 
     def forward(self, hidden_states, attention_mask, output_all_encoded_layers=False):
         """
@@ -146,13 +146,13 @@ class PPBertModel(nn.Module):
         self.config = config
 
         # 预处理阶段
-        if config.pre_process:
+        if config.is_first_stage:
             self.embeddings = BertEmbeddings(config)
         # 主干网络
         # TODO: Encoder 和 Decoder 可以统一为包含多个TransformerLayer的TransformerBlock
         self.encoder = PPBertEncoder(config)
 
-        if config.post_process:
+        if config.is_last_stage:
             self.pooler = BertPooler(config)
 
     def forward(self, input_ids, encoder_input=None, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
@@ -176,7 +176,7 @@ class PPBertModel(nn.Module):
         extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
 
-        if self.config.pre_process:
+        if self.config.is_first_stage:
             encoder_input = self.embeddings(input_ids, token_type_ids)
 
         assert encoder_input is not None
@@ -184,7 +184,7 @@ class PPBertModel(nn.Module):
                                       extended_attention_mask,
                                       output_all_encoded_layers=output_all_encoded_layers)
 
-        if self.config.post_process:
+        if self.config.is_last_stage:
             sequence_output = encoded_layers[-1]
             pooled_output = self.pooler(sequence_output)
             if not output_all_encoded_layers:
