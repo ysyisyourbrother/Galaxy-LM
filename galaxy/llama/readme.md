@@ -1,11 +1,27 @@
 # LLaMA
+
 llama: https://github.com/huggingface/transformers/blob/main/docs/source/en/model_doc/llama.md
 
 src: https://github.com/huggingface/transformers/tree/main/src/transformers/models/llama
+让然后将`modeling_llama.py` `configuration_llama.py`中相对路径修改为绝对路径
 
-llama-7b-hf 权重: Huggingface上 https://huggingface.co/luodian/llama-7b-hf/tree/main 下载 (This works perfectly for transformers>=4.28.0.)
+```python
+# before
+from ...activations import ACT2FN
+from ...cache_utils import Cache, DynamicCache, StaticCache
+...
+# after
+from transformers.activations import ACT2FN
+from transformers.modeling_outputs import (
+    BaseModelOutputWithPast,
+    CausalLMOutputWithPast,
+)
+...
+```
 
-``` lua
+llama-7b-hf 权重: Huggingface 上 https://huggingface.co/luodian/llama-7b-hf/tree/main 下载 (This works perfectly for transformers>=4.28.0.)
+
+```lua
 LlamaForCausalLM(
   (model): LlamaModel(
     (embed_tokens): Embedding(32000, 4096, padding_idx=0)
@@ -34,14 +50,17 @@ LlamaForCausalLM(
 )
 ```
 
-## Alpaca 数据
+## 用 Alpaca Fine tuning
+
 从 https://github.com/tatsu-lab/stanford_alpaca
 下载
-+ alpaca_data.json
-+ prompt.txt
 
-note:处理数据时间比较久，测试可以从alpaca_data.json复制几条建一个小的json数据
-``` bash
+- alpaca_data.json
+- prompt.txt
+
+note : 处理数据时间比较久，测试可以从 alpaca_data.json 复制几条建一个小的 json 数据
+
+```bash
 python finetune_alpaca.py \
 --model_name_or_path ../../../llama-7b-hf/llama_7b_hf_weight \
 --data_path ./alpaca/alpaca_data.json \
@@ -62,32 +81,36 @@ python finetune_alpaca.py \
 --logging_steps 1 \
 --tf32 True \
 --report_to "none" \
---logdir ./log
+--loggingdir ./log
 ```
+
 部分参数的意义
-https://huggingface.co/docs/transformers/v4.37.1/en/main_classes/trainer#transformers.TrainingArguments 
-+ bf16:
-  + bool, optional, defaults to False
-  + bf16 16-bit (mixed) precision training
-+ evaluation_strategy: 
-  + str or IntervalStrategy, optional, defaults to "no"
-  + evaluation strategy to adopt during training
-+ gradient_accumulation_steps: 
-  + int, optional, defaults to 1
-  + Number of updates steps to accumulate the gradients for, before performing a backward/update pass.
-  +  logging, evaluation, save will be conducted every gradient_accumulation_steps * xxx_step training examples
+https://huggingface.co/docs/transformers/v4.37.1/en/main_classes/trainer#transformers.TrainingArguments
 
-+ save_steps  
-  + int or float, optional, defaults to 500
-  + Number of updates steps before two checkpoint saves if save_strategy="steps". 
-  + Should be an integer or a float in range [0,1). If smaller than 1, will be interpreted as ratio of total training steps.
-+ save_total_limit 
-  + int, optional 
-  + If a value is passed, will limit the total amount of checkpoints. 
+- bf16:
+  - bool, optional, defaults to False
+  - bf16 16-bit (mixed) precision training
+- evaluation_strategy:
+  - str or IntervalStrategy, optional, defaults to "no"
+  - evaluation strategy to adopt during training
+- gradient_accumulation_steps:
 
-+ logging_steps 
-  + int or float, optional, defaults to 500 
-  + Number of update steps between two logs if logging_strategy="steps". Should be an integer or a float in range [0,1). If smaller than 1, will be interpreted as ratio of total training steps.
-+ report_to 
-  + str or List[str], optional, defaults to "all" 
-  + The list of integrations to report the results and logs to. Supported platforms are "azure_ml", "clearml", "codecarbon", "comet_ml", "dagshub", "dvclive", "flyte", "mlflow", "neptune", "tensorboard", and "wandb". Use "all" to report to all integrations installed, "none" for no integrations.
+  - int, optional, defaults to 1
+  - Number of updates steps to accumulate the gradients for, before performing a backward/update pass.
+  - logging, evaluation, save will be conducted every gradient_accumulation_steps \* xxx_step training examples
+
+- save_steps
+  - int or float, optional, defaults to 500
+  - Number of updates steps before two checkpoint saves if save_strategy="steps".
+  - Should be an integer or a float in range [0,1). If smaller than 1, will be interpreted as ratio of total training steps.
+- save_total_limit
+
+  - int, optional
+  - If a value is passed, will limit the total amount of checkpoints.
+
+- logging_steps
+  - int or float, optional, defaults to 500
+  - Number of update steps between two logs if logging_strategy="steps". Should be an integer or a float in range [0,1). If smaller than 1, will be interpreted as ratio of total training steps.
+- report_to
+  - str or List[str], optional, defaults to "all"
+  - The list of integrations to report the results and logs to. Supported platforms are "azure_ml", "clearml", "codecarbon", "comet_ml", "dagshub", "dvclive", "flyte", "mlflow", "neptune", "tensorboard", and "wandb". Use "all" to report to all integrations installed, "none" for no integrations.

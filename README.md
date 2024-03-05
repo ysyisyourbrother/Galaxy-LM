@@ -63,6 +63,7 @@ python pretrain_bert.py --config_file ./pretrain_config/bert_config.json
 
 - 参数:
   - pretrain_config/pp_bert_config
+  - `self.stage_num_hidden_layers_list`指定每个 rank 的层数
 
 ```shell
  python pretrain_pp_bert.py --rank 0 --world 2
@@ -110,10 +111,10 @@ rank 0 : 192.168.124.4
 ```
 
 ```shell
- python pretrain_galaxy.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config_rank0.json
- python pretrain_galaxy.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config_rank1.json
- python pretrain_galaxy.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config_rank2.json
- python pretrain_galaxy.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config_rank3.json
+ python pretrain_galaxy.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config.json
+ python pretrain_galaxy.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config.json
+ python pretrain_galaxy.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config.json
+ python pretrain_galaxy.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config.json
 ```
 
 ```shell
