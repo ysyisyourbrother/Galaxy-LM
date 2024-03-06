@@ -5,7 +5,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 import time
 
-from pretrain_config.dp_bert_config import config
+from train_config.bert.bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.bert_model as bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import time
 
 # TODO 将不同pretrain的config分离
-from pretrain_config.sp_bert_config import config
+from train_config.bert.sp_bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 import galaxy.models.bert.sp_bert_model as sp_bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer

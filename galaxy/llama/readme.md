@@ -50,7 +50,7 @@ LlamaForCausalLM(
 )
 ```
 
-## 用 Alpaca Fine tuning
+## 用 Alpacas 数据 Fine tuning
 
 从 https://github.com/tatsu-lab/stanford_alpaca
 下载

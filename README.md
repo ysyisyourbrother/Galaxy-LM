@@ -11,12 +11,12 @@ python pretrain_bert.py
 ```
 
 ```shell
-python pretrain_bert.py --config_file ./pretrain_config/bert_config.json
+python pretrain_bert.py --config_file ./train_config/bert/bert_config.json
 ```
 
 **Tensor Parallel**
 
-- 参数:pretrain_config/tp_bert_config.py
+- 参数: `./train_config/bert/tp_bert_config.py`
 
 ```shell
  python pretrain_tp_bert.py --rank 0 --world 2
@@ -27,8 +27,8 @@ python pretrain_bert.py --config_file ./pretrain_config/bert_config.json
 可以用参数`--config_file`指定 config
 
 ```shell
- python pretrain_tp_bert.py --rank 0 --world 2 --config_file ./pretrain_config/tp_bert_config.json
- python pretrain_tp_bert.py --rank 1 --world 2 --config_file ./pretrain_config/tp_bert_config.json
+ python pretrain_tp_bert.py --rank 0 --world 2 --config_file ./train_config/bert/tp_bert_config.json
+ python pretrain_tp_bert.py --rank 1 --world 2 --config_file ./train_config/bert/tp_bert_config.json
 ```
 
 **Data Parallel**:
@@ -41,8 +41,8 @@ python pretrain_bert.py --config_file ./pretrain_config/bert_config.json
 ```
 
 ```shell
- python pretrain_dp_bert.py --rank 0 --world 2 --config_file ./pretrain_config/dp_bert_config.json
- python pretrain_dp_bert.py --rank 1 --world 2 --config_file ./pretrain_config/dp_bert_config.json
+ python pretrain_dp_bert.py --rank 0 --world 2 --config_file ./train_config/bert/dp_bert_config.json
+ python pretrain_dp_bert.py --rank 1 --world 2 --config_file ./train_config/bert/dp_bert_config.json
 ```
 
 **Sequence Parallel**
@@ -55,8 +55,8 @@ python pretrain_bert.py --config_file ./pretrain_config/bert_config.json
 ```
 
 ```shell
- python pretrain_sp_bert.py --rank 0 --world 2 --config_file ./pretrain_config/sp_bert_config.json
- python pretrain_sp_bert.py --rank 1 --world 2 --config_file ./pretrain_config/sp_bert_config.json
+ python pretrain_sp_bert.py --rank 0 --world 2 --config_file ./train_config/bert/sp_bert_config.json
+ python pretrain_sp_bert.py --rank 1 --world 2 --config_file ./train_config/bert/sp_bert_config.json
 ```
 
 **Pipeline**
@@ -71,8 +71,8 @@ python pretrain_bert.py --config_file ./pretrain_config/bert_config.json
 ```
 
 ```shell
- python pretrain_pp_bert.py --rank 0 --world 2 --config_file ./pretrain_config/pp_bert_config.json
- python pretrain_pp_bert.py --rank 1 --world 2 --config_file ./pretrain_config/pp_bert_config.json
+ python pretrain_pp_bert.py --rank 0 --world 2 --config_file ./train_config/bert/pp_bert_config.json
+ python pretrain_pp_bert.py --rank 1 --world 2 --config_file ./train_config/bert/pp_bert_config.json
 ```
 
 **Galaxy**
@@ -85,43 +85,41 @@ python pretrain_bert.py --config_file ./pretrain_config/bert_config.json
 ```
 
 ```shell
- python pretrain_galaxy.py --rank 0 --world 2  --config_file ./pretrain_config/galaxy_bert_config.json
- python pretrain_galaxy.py --rank 1 --world 2  --config_file ./pretrain_config/galaxy_bert_config.json
+ python pretrain_galaxy.py --rank 0 --world 2  --config_file ./train_config/bert/galaxy_bert_config.json
+ python pretrain_galaxy.py --rank 1 --world 2  --config_file ./train_config/bert/galaxy_bert_config.json
 ```
 
-## Nano
+### Nano
 
-config 路径: `./pretrain_config/nano_config/`
+config 路径: `./train_config/bert/nano_config/`
 
 通信设置 : `export GLOO_SOCKET_IFNAME=eth0`
 
-rank 0 : 192.168.124.4
+rank 0 :192.168.124.7:23000, 对应`init_method`
+world_size : 3
 
-### TP
-
-| batch_size | seq_len | epoch | time(seconds) |
-| :--------- | :-----: | :---: | :-----------: |
-| 10         |   32    |   5   |      18       |
+**TP**
 
 ```shell
- python pretrain_tp_bert.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config.json
- python pretrain_tp_bert.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config.json
- python pretrain_tp_bert.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config.json
- python pretrain_tp_bert.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/tp_bert_config.json
+ python pretrain_tp_bert.py --rank 0 --world 3 --config_file ./train_config/bert/nano_config/tp_bert_config.json
+ python pretrain_tp_bert.py --rank 1 --world 3 --config_file ./train_config/bert/nano_config/tp_bert_config.json
+ python pretrain_tp_bert.py --rank 2 --world 3 --config_file ./train_config/bert/nano_config/tp_bert_config.json
 ```
 
-```shell
- python pretrain_galaxy.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config.json
- python pretrain_galaxy.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config.json
- python pretrain_galaxy.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config.json
- python pretrain_galaxy.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/galaxy_bert_config.json
-```
+**Galaxy**
 
 ```shell
- python pretrain_pp_bert.py --rank 0 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config.json
- python pretrain_pp_bert.py --rank 1 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config.json
- python pretrain_pp_bert.py --rank 2 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config.json
- python pretrain_pp_bert.py --rank 3 --world 4 --config_file ./pretrain_config/nano_config/pp_bert_config.json
+ python pretrain_galaxy.py --rank 0 --world 3 --config_file ./train_config/bert/nano_config/galaxy_bert_config.json
+ python pretrain_galaxy.py --rank 1 --world 3 --config_file ./train_config/bert/nano_config/galaxy_bert_config.json
+ python pretrain_galaxy.py --rank 2 --world 3 --config_file ./train_config/bert/nano_config/galaxy_bert_config.json
+```
+
+**PP**
+
+```shell
+ python pretrain_pp_bert.py --rank 0 --world 3 --config_file ./train_config/bert/nano_config/pp_bert_config.json
+ python pretrain_pp_bert.py --rank 1 --world 3 --config_file ./train_config/bert/nano_config/pp_bert_config.json
+ python pretrain_pp_bert.py --rank 2 --world 3 --config_file ./train_config/bert/nano_config/pp_bert_config.json
 ```
 
 ### 模型结构
@@ -148,6 +146,30 @@ X 执行 copy to all -- ATT 结束 reduce scatter --> CON 结束 all gather --> 
 
 X--ATT (TP) -- CON 1 (SP) -- MLP (SP) -- CON 2 (SP) <br>
 X copy to all -- ATT 结束 reduce scatter -- CON -- MLP --> CON 结束 all gather --> ATT .... <br>
+
+## Llama
+
+```shell
+python finetune_llama.py
+# init config with config_fil
+python finetune_llama.py --config_file ./train_config/llama/llama_config.json
+```
+
+```shell
+python finetune_pp_llama.py --rank 0 --world 2
+python finetune_pp_llama.py --rank 1 --world 2
+# init config with config_file
+python finetune_pp_llama.py --rank 0 --world 2 --config_file  ./train_config/llama/pp_llama_config.json
+python finetune_pp_llama.py --rank 1 --world 2 --config_file  ./train_config/llama/pp_llama_config.json
+```
+
+### nano
+
+```shell
+python finetune_pp_llama.py --rank 0 --world 3 --config_file ./train_config/llama/nano_config/pp_llama_config.json
+python finetune_pp_llama.py --rank 1 --world 3 --config_file ./train_config/llama/nano_config/pp_llama_config.json
+python finetune_pp_llama.py --rank 2 --world 3 --config_file ./train_config/llama/nano_config/pp_llama_config.json
+```
 
 ## LoRA
 

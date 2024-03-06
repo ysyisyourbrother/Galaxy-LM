@@ -11,7 +11,7 @@ from galaxy.utils import clean_up
 from galaxy.global_vars import initial_args, get_args
 from galaxy.core.pipeline_parallel.schedules import PipelineRuntime
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
-from pretrain_config.pp_bert_config import config
+from train_config.bert.pp_bert_config import config
 
 
   
@@ -36,17 +36,21 @@ class StageModel(nn.Module):
         if self.config.is_first_stage: # 第一个stage
             context, mask = x[0], x[2]
             encoded_layers, _ = self.bert(context, 
-                                          attention_mask=mask, 
-                                          output_all_encoded_layers=False)
+                                        attention_mask=mask, 
+                                        output_all_encoded_layers=False)
             return encoded_layers
         elif self.config.is_last_stage: #最后一个stage 经过分类层
             input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
-            _, pooled = self.bert(input_ids, encoder_input=x, output_all_encoded_layers=False)
+            _, pooled = self.bert(input_ids, 
+                                encoder_input=x, 
+                                output_all_encoded_layers=False)
             out = self.fc(pooled)
             return out
         else: #中间stage
             input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
-            encoded_layers, _ = self.bert(input_ids, encoder_input=x, output_all_encoded_layers=False)
+            encoded_layers, _ = self.bert(input_ids, 
+                                        encoder_input=x,
+                                        output_all_encoded_layers=False)
             return encoded_layers
 
 if __name__ == '__main__':
@@ -86,8 +90,7 @@ if __name__ == '__main__':
                               lr=0.01, 
                               if_cuda=True)
     start_time = time.time()
-    training_iteration = 4
-    for i in range(training_iteration):
+    for i in range(config.num_iterations):
         runtime.forward_backward_pipelining()
     print("Finish...")
     time_usage = get_time_dif(start_time)

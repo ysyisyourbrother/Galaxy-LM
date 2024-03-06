@@ -4,10 +4,8 @@ import torch.nn.functional as F
 import time
 import argparse
 
-from  finetune_config.llama_config import LlamaConfig
-from models.llama_model import LlamaModel
-import sys
-sys.path.append("../../")
+from  train_config.llama.llama_config import LlamaConfig
+from  galaxy.models.llama.llama_model import LlamaModel
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
 from galaxy.tokenizer.tokenizer import BertTokenizer
@@ -40,7 +38,7 @@ if __name__ == '__main__':
     else:
         print("default config")
     config.print_config()
-    tokenizer = BertTokenizer.from_pretrained(config.vocab_path)#TODO:玄学
+    tokenizer = BertTokenizer.from_pretrained(config.vocab_path)#TODO:TODO: 不能用LlamaTokenizer
     # tokenizer = LlamaTokenizer.from_pretrained( "../../../llama-7b-hf/llama_7b_hf_weight")
      # Prepare Dataset
     start_time = time.time()

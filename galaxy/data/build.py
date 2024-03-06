@@ -42,7 +42,7 @@ def build_dataset(config, tokenizer):
                 contents.append((token_ids, int(label), seq_len, mask))
                 # TODO: 恢复加载train和dev数据集
                 counter += 1
-                if counter >= 20:
+                if counter >= 128:
                     break
         return contents
     

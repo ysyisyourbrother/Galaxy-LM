@@ -1,31 +1,31 @@
 
 import math
 from typing import List, Optional, Tuple, Union
-
+from torch import Tensor, nn
 import torch
 import torch.utils.checkpoint
 from torch import nn
 
-from transformers.activations import ACT2FN
-from transformers.modeling_outputs import (
-    BaseModelOutputWithPast,
-)
-from transformers.modeling_utils import PreTrainedModel
-from transformers.utils  import (
-    add_start_docstrings,
-    logging,
-    replace_return_docstrings,
-)
-import sys
-sys.path.append("../")
-from finetune_config.llama_config import LlamaConfig
+# from transformers.activations import ACT2FN
+# from transformers.utils  import (
+#     logging
+# )
+# logger = logging.get_logger(__name__)
 
 
-logger = logging.get_logger(__name__)
 
-_CONFIG_FOR_DOC = "LlamaConfig"
+class SiLUActivation(nn.Module):
+    """
+    See Gaussian Error Linear Units (Hendrycks et al., https://arxiv.org/abs/1606.08415) where the SiLU (Sigmoid Linear
+    Unit) was originally introduced and coined, and see Sigmoid-Weighted Linear Units for Neural Network Function
+    Approximation in Reinforcement Learning (Elfwing et al., https://arxiv.org/abs/1702.03118) and Swish: a Self-Gated
+    Activation Function (Ramachandran et al., https://arxiv.org/abs/1710.05941v1) where the SiLU was experimented with
+    later.
+    """
 
-
+    def forward(self, input: Tensor) -> Tensor:
+        return nn.functional.silu(input)
+    
 def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0):
     """
     Make causal mask used for bi-directional self-attention.
@@ -133,7 +133,10 @@ class LlamaMLP(nn.Module):
         self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
         self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
         self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
-        self.act_fn = ACT2FN[hidden_act]
+        if hidden_act == "silu":
+            self.act_fn =  SiLUActivation()
+        else:
+            raise NotImplementedError("hidden_act only supports silu now")
 
     def forward(self, x):
         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
@@ -252,7 +255,7 @@ class LlamaAttention(nn.Module):
 
 
 class LlamaDecoderLayer(nn.Module):
-    def __init__(self, config: LlamaConfig):
+    def __init__(self, config):
         super().__init__()
         self.hidden_size = config.hidden_size
         self.self_attn = LlamaAttention(
@@ -298,15 +301,15 @@ class LlamaDecoderLayer(nn.Module):
 
 
 
-class LlamaModel(nn.Module):
-    def __init__(self, config: LlamaConfig):
-        super(LlamaModel, self).__init__()
+class PPLlamaModel(nn.Module):
+    def __init__(self, config):
+        super(PPLlamaModel, self).__init__()
         self.config = config
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
-
-        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
-        self.layers = nn.ModuleList([LlamaDecoderLayer(config) for _ in range(config.num_hidden_layers)])
+        if self.config.is_first_stage:
+            self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
+        self.layers = nn.ModuleList([LlamaDecoderLayer(config) for _ in range(config.num_pp_hidden_layers)])
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
 
@@ -341,12 +344,17 @@ class LlamaModel(nn.Module):
         self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
+        inputs_embeds = None,
     ) :
-        batch_size, seq_length = input_ids.shape # [bs,seq]
-        inputs_embeds = self.embed_tokens(input_ids)#[bs,seq,hidden_size]
+        batch_size = self.config.batch_size
+        seq_length =  self.config.pad_size
         attention_mask = torch.ones(
             (batch_size, 1, seq_length, seq_length),  device= self.config.device
         )# [bs, 1, seq, seq]
+        if self.config.is_first_stage:
+            assert self.embed_tokens != None
+            inputs_embeds = self.embed_tokens(input_ids)#[bs,seq,hidden_size]
+        assert(inputs_embeds is not None)
         hidden_states = inputs_embeds
         for idx, decoder_layer in enumerate(self.layers):
             layer_outputs = decoder_layer(
@@ -356,10 +364,12 @@ class LlamaModel(nn.Module):
                 output_attentions=False,
                 use_cache=False,
             )
-
             hidden_states = layer_outputs 
         hidden_states = self.norm(hidden_states)
         # pool
-        pooled_output = hidden_states[:, 0]
-        return pooled_output
+        if self.config.is_last_stage:
+            pooled_output = hidden_states[:, 0]
+            return pooled_output
+        else:
+            return hidden_states
 
