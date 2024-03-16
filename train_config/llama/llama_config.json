@@ -25,15 +25,19 @@
     "model_type":"llama",
     "hidden_size": 4096,
     "intermediate_size": 11008,
-    "num_hidden_layers":1,
+    "num_hidden_layers":6,
     "num_attention_heads": 32,
     
     "type_vocab_size": 2,
     "vocab_size": 21128,
     "use_lora": false,
-    "lora_att_dim": 4,
+    "lora_att_dim":4,
     "lora_alpha": 32,
     "lora_dropout": 0.1,
     "fan_in_fan_out": true,
-    "merge_weights": false
+    "merge_weights": false,
+    "lora_target_modules":[
+        "q_proj",
+        "v_proj"
+    ]
 }

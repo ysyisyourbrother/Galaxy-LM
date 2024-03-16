@@ -9,18 +9,16 @@ import torch.distributed as dist
 
 from galaxy.core.pipeline_parallel import threadsafe_counter,threadsafe_queue
 from galaxy.core.pipeline_parallel import parallel_state
-from galaxy.global_vars import get_args
-
 
 class CommunicationHandler():
     """ Handles communication between stages. """
     def __init__(self, config):
-        self.rank = parallel_state.get_pipeline_parallel_rank()
-        self.world_size = parallel_state.get_pipeline_parallel_world_size()
+        self.rank = config.stage
+        self.world_size = config.total_stage
         self.next_rank = config.next_rank
         self.pre_rank = config.pre_rank
-        self.if_first_rank = (get_args().rank == 0)
-        self.if_last_rank = (get_args().rank == config.total_stage-1)
+        self.if_first_rank =  config.is_first_stage
+        self.if_last_rank =  config.is_last_stage
         self.tensor_tag = {"forward": 0, "backward": 1}
         self.tensor_shape = {"forward": (config.batch_size, config.pad_size, config.hidden_size), 
                              "backward": (config.batch_size, config.pad_size, config.hidden_size)}  

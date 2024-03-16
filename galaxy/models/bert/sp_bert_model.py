@@ -142,19 +142,10 @@ class SPBertEncoder(nn.Module):
         layer = SPBertLayer(config)
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
 
-    def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True):
-        """
-        Arguments:
-            output_all_encoded_layers: 是否要保存每一层BertLayer的输出结果
-        """
-        all_encoder_layers = []
+    def forward(self, hidden_states, attention_mask ):
         for layer_module in self.layer:
             hidden_states = layer_module(hidden_states, attention_mask)
-            if output_all_encoded_layers:
-                all_encoder_layers.append(hidden_states)
-        if not output_all_encoded_layers:
-            all_encoder_layers.append(hidden_states)
-        return all_encoder_layers
+        return hidden_states
 
 
 
@@ -171,7 +162,7 @@ class SPBertModel(nn.Module):
         self.encoder = SPBertEncoder(config)
         self.pooler = BertPooler(config)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None ):
 
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
@@ -201,15 +192,15 @@ class SPBertModel(nn.Module):
         # 序列并行目前只支持输出最后层的结果
         output_all_encoded_layers = False
 
-        encoded_layers = self.encoder(scatter_sp_input,
+        hidden_states = self.encoder(scatter_sp_input,
                                       extended_attention_mask,
-                                      output_all_encoded_layers=output_all_encoded_layers)
+                                     )
         # encoder的最终输出结果
-        sequence_output = encoded_layers[-1]
+        sequence_output = hidden_states
 
         # AllGather output to devices:
         gather_sp_output = gather_from_sequence_parallel_region(sequence_output, False, 
                                                                 self.config.seq_scatter_list)
         
         pooled_output = self.pooler(gather_sp_output)
-        return gather_sp_output, pooled_output
+        return  pooled_output

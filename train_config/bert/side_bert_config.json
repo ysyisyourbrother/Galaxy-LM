@@ -7,7 +7,7 @@
     "train": true,
     "num_epochs": 5,
     "batch_size": 64,
-    "pad_size": 128,
+    "pad_size": 256,
     "learning_rate": 5e-5,
     "class_list_path": "dataset/THUCNews/data/class.txt",
     "attention_probs_dropout_prob": 0.1,
@@ -30,5 +30,6 @@
     "lora_alpha": 32,
     "lora_dropout": 0.1,
     "fan_in_fan_out": true,
-    "merge_weights": false
+    "merge_weights": false,
+    "side_reduction_factor":16
 }

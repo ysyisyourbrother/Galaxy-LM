@@ -15,7 +15,7 @@ class BertConfig():
         self.train = True
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备
         self.num_epochs = 3                                             # epoch数
-        self.batch_size = 10                                           # mini-batch大小
+        self.batch_size = 4                                           # mini-batch大小
         self.pad_size = 32                                              # 每句话处理成的长度(短填长切)
         self.learning_rate = 5e-5       
         self.class_list = [x.strip() for x in open(
@@ -38,7 +38,7 @@ class BertConfig():
         self.hidden_size = 768
         self.intermediate_size = 4*self.hidden_size                # MLP层两个dense层中间的intermediate state大小
         self.num_attention_heads = 12
-        self.num_hidden_layers = 3
+        self.num_hidden_layers = 2
         self.att_head_size = int(self.hidden_size/self.num_attention_heads)
 
         # 词表

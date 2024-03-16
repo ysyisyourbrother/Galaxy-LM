@@ -123,19 +123,11 @@ class PPBertEncoder(nn.Module):
         layer = PPBertLayer(config)
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_pp_hidden_layers)])
 
-    def forward(self, hidden_states, attention_mask, output_all_encoded_layers=False):
-        """
-        Arguments:
-            output_all_encoded_layers: 是否要保存每一个BertLayer的输出结果
-        """
-        all_encoder_layers = []
+    def forward(self, hidden_states, attention_mask ):
+
         for layer_module in self.layer:
             hidden_states = layer_module(hidden_states, attention_mask)
-            if output_all_encoded_layers:
-                all_encoder_layers.append(hidden_states)
-        if not output_all_encoded_layers:
-            all_encoder_layers.append(hidden_states)
-        return all_encoder_layers
+        return hidden_states
 
  
 
@@ -155,7 +147,7 @@ class PPBertModel(nn.Module):
         if config.is_last_stage:
             self.pooler = BertPooler(config)
 
-    def forward(self, input_ids, encoder_input=None, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
+    def forward(self, input_ids, encoder_input=None, token_type_ids=None, attention_mask=None ):
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         if token_type_ids is None:
@@ -180,17 +172,14 @@ class PPBertModel(nn.Module):
             encoder_input = self.embeddings(input_ids, token_type_ids)
 
         assert encoder_input is not None
-        encoded_layers = self.encoder(encoder_input,
+        hidden_states = self.encoder(encoder_input,
                                       extended_attention_mask,
-                                      output_all_encoded_layers=output_all_encoded_layers)
+                                      )
 
         if self.config.is_last_stage:
-            sequence_output = encoded_layers[-1]
+            sequence_output = hidden_states
             pooled_output = self.pooler(sequence_output)
-            if not output_all_encoded_layers:
-                encoded_layers = encoded_layers[-1]
-            return encoded_layers, pooled_output
+            return   pooled_output
         else:
-            if not output_all_encoded_layers:
-                encoded_layers = encoded_layers[-1]
-            return encoded_layers, None
+           
+            return hidden_states

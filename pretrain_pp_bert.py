@@ -14,7 +14,7 @@ from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_numb
 from train_config.bert.pp_bert_config import config
 
 
-  
+
 class StageModel(nn.Module):
     def __init__(self, config):
         super(StageModel, self).__init__()
@@ -35,23 +35,23 @@ class StageModel(nn.Module):
         # x: (token_ids, int(label), seq_len, mask)
         if self.config.is_first_stage: # 第一个stage
             context, mask = x[0], x[2]
-            encoded_layers, _ = self.bert(context, 
+            hidden_states = self.bert(context, 
                                         attention_mask=mask, 
-                                        output_all_encoded_layers=False)
-            return encoded_layers
+                                        )
+            return hidden_states
         elif self.config.is_last_stage: #最后一个stage 经过分类层
             input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
-            _, pooled = self.bert(input_ids, 
+            pooled = self.bert(input_ids, 
                                 encoder_input=x, 
-                                output_all_encoded_layers=False)
+                                 )
             out = self.fc(pooled)
             return out
         else: #中间stage
             input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
-            encoded_layers, _ = self.bert(input_ids, 
+            hidden_states = self.bert(input_ids, 
                                         encoder_input=x,
-                                        output_all_encoded_layers=False)
-            return encoded_layers
+                                      )
+            return hidden_states
 
 if __name__ == '__main__':
     # Initial Galaxy, args
@@ -74,13 +74,16 @@ if __name__ == '__main__':
     print("Time usage:", time_dif)
 
     # Prepare Model
+    print(config.device)
+    mem_before = torch.cuda.memory_allocated()
     model = StageModel(config).to(config.device)
+    mem_after = torch.cuda.memory_allocated()
+    print("Model memory usage: {} ( {} MB ) ".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024) ))
     if config.train:
         model.train()
-        print('number of model parameters:', get_parameter_number(model)) 
+        print('number of model parameters:  ', get_parameter_number(model)) 
     else:
-        model.eval()
-        print("Start inferencing")
+        raise NotImplementedError("PipelineRuntime only supports train mode.")
     # Prepare PipelineRuntime
     runtime = PipelineRuntime(config, 
                               model, 
@@ -89,11 +92,13 @@ if __name__ == '__main__':
                               optimizer=torch.optim.SGD, 
                               lr=0.01, 
                               if_cuda=True)
-    start_time = time.time()
+    torch.cuda.synchronize()
+    start = time.time()
     for i in range(config.num_iterations):
         runtime.forward_backward_pipelining()
+    torch.cuda.synchronize()
+    end = time.time()
+    print("total time: {} ms".format((end - start) * 1000))
+    max_memory = torch.cuda.max_memory_allocated(device=config.device)
+    print("Max memory:  {} ( {} MB ) ".format( max_memory , max_memory /(1024*1024) ))
     print("Finish...")
-    time_usage = get_time_dif(start_time)
-    print(time_usage)
-    print(f"{time_usage.seconds} (seconds)")
-    # clean_up() TODO:会Aborted (core dumped)

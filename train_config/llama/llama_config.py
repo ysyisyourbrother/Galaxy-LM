@@ -52,6 +52,10 @@ class LlamaConfig():
         self.lora_dropout = 0.1
         self.fan_in_fan_out = True
         self.merge_weights = False
+        self.lora_target_modules=[
+                    "q_proj",
+                    "v_proj",
+                ]    
     def load_from_json(self,config_file):
         if not os.path.exists(config_file):
             raise FileNotFoundError("config file: {} not found".format(config_file))
@@ -108,6 +112,7 @@ class LlamaConfig():
         self.lora_dropout = config_dict["lora_dropout"]
         self.fan_in_fan_out = config_dict["fan_in_fan_out"]
         self.merge_weights = config_dict["merge_weights"]
+        self.lora_target_modules = config_dict["lora_target_modules"]
     def print_config(self):
         for k,v in self.__dict__.items():
             print(k,v)

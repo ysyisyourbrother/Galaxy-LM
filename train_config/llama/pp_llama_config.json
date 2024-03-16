@@ -36,12 +36,16 @@
     "distributed_backend": "gloo",
     "stage_num_hidden_layers_list": [1,1],
     "num_microbatches": 4,
-    "num_iterations":4,
+    "num_iterations":1,
 
     "use_lora": false,
-    "lora_att_dim": 4,
+    "lora_att_dim":4,
     "lora_alpha": 32,
     "lora_dropout": 0.1,
     "fan_in_fan_out": true,
-    "merge_weights": false
+    "merge_weights": false,
+    "lora_target_modules":[
+        "q_proj",
+        "v_proj"
+    ]
 }

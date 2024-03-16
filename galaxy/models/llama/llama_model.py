@@ -4,7 +4,7 @@ from torch import Tensor, nn
 import torch
 import torch.utils.checkpoint
 from torch import nn
-
+from galaxy.loralib.layers import  Linear as LoraLinear
 # from transformers.activations import ACT2FN
 # from transformers.utils  import (
 #     logging
@@ -125,11 +125,13 @@ def apply_rotary_pos_emb(q, k, cos, sin, offset: int = 0):
 class LlamaMLP(nn.Module):
     def __init__(
         self,
+        config,
         hidden_size: int,
         intermediate_size: int,
         hidden_act: str,
     ):
         super().__init__()
+        #TODO:要不要插入lora
         self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
         self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
         self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
@@ -147,6 +149,7 @@ class LlamaAttention(nn.Module):
 
     def __init__(
         self,
+        config,
         hidden_size: int,
         num_heads: int,
     ):
@@ -160,21 +163,55 @@ class LlamaAttention(nn.Module):
                 f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
                 f" and `num_heads`: {num_heads})."
             )
-        self.q_proj = nn.Linear(
+        self.q_proj = None
+        self.k_proj = None
+        self.v_proj = None
+        if config.use_lora and config.lora_att_dim != 0:
+            if "q_proj" in config.lora_target_modules:
+                self.q_proj = LoraLinear(config.hidden_size, 
+                                num_heads * self.head_dim,
+                                r = config.lora_att_dim,
+                                lora_alpha = config.lora_alpha,
+                                lora_dropout = config.lora_dropout,
+                                fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                                merge_weights = config.merge_weights,
+                                bias=False) 
+            if "k_proj"  in config.lora_target_modules:
+                self.k_proj = LoraLinear(config.hidden_size, 
+                                num_heads * self.head_dim,
+                                r = config.lora_att_dim,
+                                lora_alpha = config.lora_alpha,
+                                lora_dropout = config.lora_dropout,
+                                fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                                merge_weights = config.merge_weights,
+                                bias=False)  
+            if "v_proj"  in config.lora_target_modules:
+                self.v_proj = LoraLinear(config.hidden_size, 
+                                num_heads * self.head_dim,
+                                r = config.lora_att_dim,
+                                lora_alpha = config.lora_alpha,
+                                lora_dropout = config.lora_dropout,
+                                fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                                merge_weights = config.merge_weights,
+                                bias=False)  
+        if self.q_proj == None:
+            self.q_proj = nn.Linear(
             hidden_size,
             num_heads * self.head_dim,
             bias=False,
-        )
-        self.k_proj = nn.Linear(
+            )
+        if self.k_proj == None:
+            self.k_proj = nn.Linear(
             hidden_size,
             num_heads * self.head_dim,
             bias=False,
-        )
-        self.v_proj = nn.Linear(
+            )
+        if self.v_proj == None:
+            self.v_proj = nn.Linear(
             hidden_size,
             num_heads * self.head_dim,
             bias=False,
-        )
+            )
         self.o_proj = nn.Linear(
             num_heads * self.head_dim,
             hidden_size,
@@ -259,10 +296,12 @@ class LlamaDecoderLayer(nn.Module):
         super().__init__()
         self.hidden_size = config.hidden_size
         self.self_attn = LlamaAttention(
+            config = config,
             hidden_size=self.hidden_size,
             num_heads=config.num_attention_heads,
         )
         self.mlp = LlamaMLP(
+            config = config,
             hidden_size=self.hidden_size,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,

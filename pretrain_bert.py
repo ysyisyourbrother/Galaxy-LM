@@ -25,7 +25,7 @@ class Model(nn.Module):
             for param in self.bert.parameters():
                 param.requires_grad = True
         else:
-            print("use lora")
+            print("use lora...")
             mark_only_lora_as_trainable(self.bert)
         # 最后用一个全连接层将提取到的特征转化为num_class个值
         self.fc = nn.Linear(config.hidden_size, config.num_classes)
@@ -35,7 +35,7 @@ class Model(nn.Module):
         # x: (token_ids, seq_len, mask)
         context = (x[0]).to(self.config.device)
         mask = (x[2]).to(self.config.device)
-        _, pooled = self.bert(context, attention_mask=mask, output_all_encoded_layers=False)
+        pooled = self.bert(context, attention_mask=mask)
         out = self.fc(pooled)
         return out
 
@@ -91,4 +91,6 @@ if __name__ == '__main__':
     time_usage = get_time_dif(start_time)
     print(time_usage)
     print(f"{time_usage.seconds} (seconds)")
+    max_memory = torch.cuda.max_memory_allocated(device=config.device)
+    print("Max memory:  {} ( {} MB ) ".format( max_memory , max_memory /(1024*1024) ))
     

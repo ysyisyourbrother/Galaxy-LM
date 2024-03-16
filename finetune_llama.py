@@ -18,6 +18,13 @@ class  Model(nn.Module):
         super(Model, self).__init__()
         self.config = config
         self.llama_model = LlamaModel(config)
+        if not config.use_lora or config.lora_att_dim == 0:
+            print("not use lora, train full parameters ...")
+            for param in self.llama_model.parameters():
+                param.requires_grad = True
+        else: 
+            print("use lora  ...")
+            mark_only_lora_as_trainable(self.llama_model)
         self.lm_head = nn.Linear(config.hidden_size, config.num_classes)
     def forward(self, x):
         context = (x[0]).to(self.config.device) # [bs,seq]
@@ -55,7 +62,7 @@ if __name__ == '__main__':
 
     if config.train:
         model.train()
-        print('number of bert parameters:', get_parameter_number(model.llama_model))
+        print('number of llama_model parameters:', get_parameter_number(model.llama_model))
         print('number of lm_head parameters:', get_parameter_number(model.lm_head))
         print("Start training")
     else:

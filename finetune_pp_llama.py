@@ -20,6 +20,13 @@ class  StageModel(nn.Module):
         self.llama_model = PPLlamaModel(config)
         if config.is_last_stage: # 最后一个stage，有FC 分类层
             self.lm_head = nn.Linear(config.hidden_size, config.num_classes)
+        if not config.use_lora or config.lora_att_dim == 0:
+            print("not use lora, train full parameters ... ")
+            for param in self.llama_model.parameters():
+                param.requires_grad = True
+        else:
+            print("use lora, mark_only_lora_as_trainable ... ")
+            mark_only_lora_as_trainable(self.llama_model)
     def forward(self, x):
         # x: (token_ids, int(label), seq_len, mask)
         if self.config.is_first_stage: # 第一个stage
@@ -69,7 +76,7 @@ if __name__ == '__main__':
     model = StageModel(config).to(config.device)
     if config.train:
         model.train()
-        print('number of bert parameters:', get_parameter_number(model.llama_model))
+        print('number of llama_model parameters:', get_parameter_number(model.llama_model))
         if config.is_last_stage:
             print('number of lm_head parameters:', get_parameter_number(model.lm_head))
         print("Start training")

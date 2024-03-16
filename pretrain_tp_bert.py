@@ -32,7 +32,7 @@ class Model(nn.Module):
         # 每一个input的维度：(token_ids, int(label), seq_len, mask)
         context = x[0]
         mask = x[2]
-        _, pooled = self.bert(context, attention_mask=mask, output_all_encoded_layers=False)
+        pooled = self.bert(context, attention_mask=mask )
         out = self.fc(pooled)
         return out
 

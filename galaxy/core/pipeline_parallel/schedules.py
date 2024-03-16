@@ -1,6 +1,4 @@
 import torch
-from torch.nn.parallel.distributed import DistributedDataParallel as DDP
-
 import contextlib
 import itertools
 

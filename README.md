@@ -4,6 +4,10 @@ Work in progress LLM framework.
 
 ## Bert
 
+`config`: `train_config/bert`
+
+`model`: `/root/nfs/codespace/Galaxy-LM/galaxy/models/bert`
+
 **串行**:
 
 ```shell
@@ -12,6 +16,16 @@ python pretrain_bert.py
 
 ```shell
 python pretrain_bert.py --config_file ./train_config/bert/bert_config.json
+```
+
+**Side**
+
+```shell
+python pretrain_side_bert.py
+```
+
+```shell
+python pretrain_side_bert.py --config_file ./train_config/bert/side_bert_config.json
 ```
 
 **Tensor Parallel**
@@ -89,6 +103,8 @@ python pretrain_bert.py --config_file ./train_config/bert/bert_config.json
  python pretrain_galaxy.py --rank 1 --world 2  --config_file ./train_config/bert/galaxy_bert_config.json
 ```
 
+- 参数:
+
 ### Nano
 
 config 路径: `./train_config/bert/nano_config/`
@@ -148,6 +164,10 @@ X--ATT (TP) -- CON 1 (SP) -- MLP (SP) -- CON 2 (SP) <br>
 X copy to all -- ATT 结束 reduce scatter -- CON -- MLP --> CON 结束 all gather --> ATT .... <br>
 
 ## Llama
+
+config: `train_config/llama`
+
+model: `galaxy/models/llama`
 
 ```shell
 python finetune_llama.py

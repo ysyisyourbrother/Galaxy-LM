@@ -75,19 +75,10 @@ class GalaxyBertEncoder(nn.Module):
         layer = GalaxyBertLayer(config)
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
 
-    def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True):
-        """
-        Arguments:
-            output_all_encoded_layers: 是否要保存每一层BertLayer的输出结果
-        """
-        all_encoder_layers = []
+    def forward(self, hidden_states, attention_mask ):
         for layer_module in self.layer:
             hidden_states = layer_module(hidden_states, attention_mask)
-            if output_all_encoded_layers:
-                all_encoder_layers.append(hidden_states)
-        if not output_all_encoded_layers:
-            all_encoder_layers.append(hidden_states)
-        return all_encoder_layers
+        return hidden_states
     
     
 class GalaxyBertModel(nn.Module):
@@ -102,7 +93,7 @@ class GalaxyBertModel(nn.Module):
         self.encoder = GalaxyBertEncoder(config)
         self.pooler = BertPooler(config)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None ):
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         if token_type_ids is None:
@@ -127,23 +118,22 @@ class GalaxyBertModel(nn.Module):
         # ATT 不同的并行方式 决定最初的输入 TP: copy to all ; SP: split along dim  ;
         if self.config.att_parallel_method == "TP":
             tp_input = copy_to_tensor_model_parallel_region(embedding_output) 
-            encoded_layers = self.encoder(tp_input,
+            hidden_states = self.encoder(tp_input,
                                       extended_attention_mask,
-                                      output_all_encoded_layers=output_all_encoded_layers)
+                                    )
         else: 
            #TODO:
             scatter_sp_input = scatter_to_sequence_parallel_region(embedding_output, self.config.seq_scatter_list)
-            encoded_layers = self.encoder(scatter_sp_input,
+            hidden_states = self.encoder(scatter_sp_input,
                                       extended_attention_mask,
-                                      output_all_encoded_layers=output_all_encoded_layers)
+                                   )
         
         # encoder的最终输出结果
-        sequence_output = encoded_layers[-1]
+        sequence_output = hidden_states
         #  最终的输出是否需要gather
         if  self.config.att_parallel_method == "SP" :
             sequence_output =  gather_from_sequence_parallel_region(sequence_output, False,
                                                                 self.config.seq_scatter_list)
         pooled_output = self.pooler(sequence_output)
-        if not output_all_encoded_layers:
-            encoded_layers = encoded_layers[-1]
-        return encoded_layers, pooled_output
+       
+        return pooled_output
