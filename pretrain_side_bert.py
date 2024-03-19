@@ -27,7 +27,7 @@ class Model(nn.Module):
         # 最后用一个全连接层将提取到的特征转化为num_class个值
         self.fc = nn.Linear(config.hidden_size, config.num_classes)
 
-    def forward(self, x):
+    def forward(self, x): 
         
         # x: (token_ids, seq_len, mask)
         context = (x[0]).to(self.config.device)

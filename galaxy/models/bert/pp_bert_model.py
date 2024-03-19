@@ -1,126 +1,15 @@
-from json import encoder
+
 import torch
 import torch.nn as nn
-import math
 import copy
 from galaxy.models.bert.bert_model import gelu, swish
-from galaxy.models.bert.bert_model import BertEmbeddings,BertPooler,BertMLP,BertConnectLayer
+from galaxy.models.bert.bert_model import BertEmbeddings,BertPooler,BertMLP,BertConnectLayer,BertLayer
 from galaxy.loralib.layers import  Linear as LoraLinear
- 
-class PPBertAttention(nn.Module):
-    def __init__(self, config):
-        super(PPBertAttention, self).__init__()
-        # hidden_size = num_attention_heads * head_size
-        if config.hidden_size % config.num_attention_heads != 0:
-            raise ValueError(
-                "The hidden size (%d) is not a multiple of the number of attention "
-                "heads (%d)" % (config.hidden_size, config.num_attention_heads))
-        self.num_attention_heads = config.num_attention_heads
-        self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
-        self.all_head_size = self.num_attention_heads * self.attention_head_size
-        
-        if config.use_lora == False or config.lora_att_dim == 0:
-            self.query = nn.Linear(config.hidden_size, self.all_head_size)
-            self.key = nn.Linear(config.hidden_size, self.all_head_size)
-            self.value = nn.Linear(config.hidden_size, self.all_head_size)
-        else:
-            self.query = LoraLinear(config.hidden_size, 
-                               self.all_head_size,
-                               r = config.lora_att_dim,
-                               lora_alpha = config.lora_alpha,
-                               lora_dropout = config.lora_dropout,
-                               fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
-                               merge_weights = config.merge_weights) 
-            self.key = nn.Linear(config.hidden_size, self.all_head_size)
-            self.value = LoraLinear(config.hidden_size, 
-                                self.all_head_size,
-                                r = config.lora_att_dim,
-                                lora_alpha = config.lora_alpha,
-                                lora_dropout = config.lora_dropout,
-                                fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
-                                merge_weights = config.merge_weights) 
-        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)    
-        # Linear output
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-
-    def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
-        x = x.view(*new_x_shape)
-        return x.permute(0, 2, 1, 3)
-
-    def forward(self, hidden_states, attention_mask):
-        """
-        Arguments:
-            hidden_states: [bs, seq_len, hidden_size]
-            attention_mask: [1,1,1,0,0,...,0] 标记sequence中哪些为有效位置
-        """
-        # 计算QKV矩阵
-        # [bs, seq_len, hidden_size] -> [bs, seq_len, hidden_size]
-        mixed_query_layer = self.query(hidden_states)
-        # [bs, seq_len, hidden_size] -> [bs, seq_len, hidden_size]
-        mixed_key_layer = self.key(hidden_states)
-        # [bs, seq_len, hidden_size] -> [bs, seq_len, hidden_size]
-        mixed_value_layer = self.value(hidden_states)
-
-        # 调整QKV矩阵的shape，使其满足Multi-head Attention形式
-        # [bs, seq_len, hidden_size] -> [bs, num_att_head, seq_len, att_head_size]
-        query_layer = self.transpose_for_scores(mixed_query_layer)
-        # [bs, seq_len, hidden_size] -> [bs, num_att_head, seq_len, att_head_size]
-        key_layer = self.transpose_for_scores(mixed_key_layer)
-        # [bs, seq_len, hidden_size] -> [bs, num_att_head, seq_len, att_head_size]
-        value_layer = self.transpose_for_scores(mixed_value_layer)
-
-        # 计算Q*K
-        # [bs, num_att_head, seq_len, att_head_size] -> [bs, num_att_head, seq_len, seq_len]
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-        attention_scores = attention_scores + attention_mask
-        # Normalize the attention scores to probabilities.
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
-
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
-        attention_probs = self.dropout(attention_probs)
-
-        # 计算(QK)*V
-        # [bs, num_att_head, seq_len, seq_len] -> [bs, num_att_head, seq_len, att_head_size]
-        context_layer = torch.matmul(attention_probs, value_layer)
-        # [bs, num_att_head, seq_len, att_head_size] -> [bs, seq_len, num_att_head, att_head_size]
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        # [bs, seq_len, num_att_head, att_head_size] -> [bs, seq_len, hidden_size]
-        context_layer = context_layer.view(*new_context_layer_shape)
-        
-        # Linear output
-        multi_attention_output = self.dense(context_layer)
-        return multi_attention_output
-
-
- 
-
-
-class PPBertLayer(nn.Module):
-    def __init__(self, config):
-        super(PPBertLayer, self).__init__()
-        self.attention = PPBertAttention(config)
-        self.mlp = BertMLP(config)
-        self.con1 = BertConnectLayer(config)
-        self.con2 = BertConnectLayer(config)
-
-
-    def forward(self, hidden_states, attention_mask):
-        attention_output = self.attention(  hidden_states , attention_mask)
-        connective_output = self.con1(hidden_states ,attention_output)
-        mlp_output = self.mlp(connective_output)
-        layer_output = self.con2(connective_output,mlp_output)
-        return layer_output
-
 
 class PPBertEncoder(nn.Module):
     def __init__(self, config):
         super(PPBertEncoder, self).__init__()
-        layer = PPBertLayer(config)
+        layer = BertLayer(config)
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_pp_hidden_layers)])
 
     def forward(self, hidden_states, attention_mask ):
@@ -128,10 +17,6 @@ class PPBertEncoder(nn.Module):
         for layer_module in self.layer:
             hidden_states = layer_module(hidden_states, attention_mask)
         return hidden_states
-
- 
-
-
 class PPBertModel(nn.Module):
     def __init__(self, config):
         super(PPBertModel, self).__init__()
@@ -167,19 +52,16 @@ class PPBertModel(nn.Module):
         # effectively the same as removing these entirely.
         extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
-
+        # 第一个stage,经过embedding 
         if self.config.is_first_stage:
             encoder_input = self.embeddings(input_ids, token_type_ids)
 
         assert encoder_input is not None
         hidden_states = self.encoder(encoder_input,
-                                      extended_attention_mask,
-                                      )
-
+                                    extended_attention_mask,)
         if self.config.is_last_stage:
             sequence_output = hidden_states
             pooled_output = self.pooler(sequence_output)
             return   pooled_output
         else:
-           
             return hidden_states

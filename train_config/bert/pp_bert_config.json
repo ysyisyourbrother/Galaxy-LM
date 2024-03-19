@@ -5,10 +5,10 @@
     "vocab_path": "dataset/THUCNews/vocab.txt",
     "train": true,
     "device": "cuda",
-    "num_epochs": 3,
-    "batch_size": 1,
+    "num_epochs": 1,
+    "batch_size": 16,
     "learning_rate": 5e-5,
-    "pad_size": 32,
+    "pad_size": 128,
     "class_list_path": "dataset/THUCNews/data/class.txt",
     "attention_probs_dropout_prob": 0.1,
     "directionality": "bidi",
@@ -22,14 +22,14 @@
     "hidden_size": 768,
     "intermediate_size": 3072,
     "num_attention_heads": 12,
-    "num_hidden_layers": 2,
+    "num_hidden_layers": 12,
     "type_vocab_size": 2,
     "vocab_size": 21128,
     "init_method": "tcp://127.0.0.1:23000",
     "distributed_backend": "gloo",
-    "stage_num_hidden_layers_list": [1,1],
+    "stage_num_hidden_layers_list": [6,6],
     "num_microbatches": 4,
-    "num_iterations":4,
+    "num_iterations":128,
     "use_lora": false,
     "lora_att_dim": 4,
     "lora_alpha": 32,
@@ -37,3 +37,5 @@
     "fan_in_fan_out": true,
     "merge_weights": false
 }
+    
+ 

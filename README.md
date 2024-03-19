@@ -18,16 +18,6 @@ python pretrain_bert.py
 python pretrain_bert.py --config_file ./train_config/bert/bert_config.json
 ```
 
-**Side**
-
-```shell
-python pretrain_side_bert.py
-```
-
-```shell
-python pretrain_side_bert.py --config_file ./train_config/bert/side_bert_config.json
-```
-
 **Tensor Parallel**
 
 - 参数: `./train_config/bert/tp_bert_config.py`
@@ -101,6 +91,25 @@ python pretrain_side_bert.py --config_file ./train_config/bert/side_bert_config.
 ```shell
  python pretrain_galaxy.py --rank 0 --world 2  --config_file ./train_config/bert/galaxy_bert_config.json
  python pretrain_galaxy.py --rank 1 --world 2  --config_file ./train_config/bert/galaxy_bert_config.json
+```
+
+## Side-Bert
+
+**Side**
+
+```shell
+python pretrain_side_bert.py
+```
+
+```shell
+python pretrain_side_bert.py --config_file ./train_config/bert/side_bert_config.json
+```
+
+**Pipeline**
+
+```shell
+ python pretrain_side_pp_bert.py --rank 0 --world 2 --config_file ./train_config/bert/side_pp_bert_config.json
+ python pretrain_side_pp_bert.py --rank 1 --world 2 --config_file ./train_config/bert/side_pp_bert_config.json
 ```
 
 - 参数:

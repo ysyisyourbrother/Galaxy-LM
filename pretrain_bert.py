@@ -62,7 +62,10 @@ if __name__ == '__main__':
     print("Time usage:", time_dif)
 
     # Prepare Model
+    mem_before = torch.cuda.memory_allocated()
     model = Model(config).to(config.device)
+    mem_after = torch.cuda.memory_allocated()
+    print("Model memory usage: {} ( {} MB ) ".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024) ))
 
     if config.train:
         model.train()

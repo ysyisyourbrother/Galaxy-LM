@@ -3,10 +3,10 @@
     "dev_path": "dataset/THUCNews/data/dev.txt",
     "test_path": "dataset/THUCNews/data/test.txt",
     "vocab_path": "dataset/THUCNews/vocab.txt",
-    "device": "cuda",
     "train": true,
+    "device": "cuda",
     "num_epochs": 1,
-    "batch_size": 32,
+    "batch_size": 16,
     "learning_rate": 5e-5,
     "pad_size": 128,
     "class_list_path": "dataset/THUCNews/data/class.txt",
@@ -27,10 +27,14 @@
     "vocab_size": 21128,
     "init_method": "tcp://127.0.0.1:23000",
     "distributed_backend": "gloo",
+    "stage_num_hidden_layers_list": [6,6],
+    "num_microbatches": 4,
+    "num_iterations":128,
     "use_lora": false,
     "lora_att_dim": 4,
     "lora_alpha": 32,
     "lora_dropout": 0.1,
     "fan_in_fan_out": true,
-    "merge_weights": false
+    "merge_weights": false,
+    "side_reduction_factor":16
 }
