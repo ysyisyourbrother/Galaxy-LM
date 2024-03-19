@@ -5,9 +5,10 @@ import time
 import argparse
 from train_config.bert.side_bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
-from galaxy.models.bert.bert_side_model import SideBertModel, mark_only_side_as_trainable
+from galaxy.models.bert.bert_side_model import SideBertModel 
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.loralib.utils import  get_parameter_number
+from galaxy.utils import get_max_memory,mark_only_side_as_trainable
 
 
 
@@ -88,6 +89,5 @@ if __name__ == '__main__':
     time_usage = get_time_dif(start_time)
     print(time_usage)
     print(f"{time_usage.seconds} (seconds)")
-    max_memory = torch.cuda.max_memory_allocated(device=config.device)
-    print("Max memory:  {} ( {} MB ) ".format( max_memory , max_memory /(1024*1024) ))
+    get_max_memory(config)
     

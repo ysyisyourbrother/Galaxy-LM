@@ -9,6 +9,7 @@ from  galaxy.models.llama.llama_model import LlamaModel
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
 from galaxy.tokenizer.tokenizer import BertTokenizer
+from galaxy.utils import get_max_memory
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_file',default=None ,type=str)
@@ -87,3 +88,5 @@ if __name__ == '__main__':
     time_usage = get_time_dif(start_time)
     print(time_usage)
     print(f"{time_usage.seconds} (seconds)")
+    get_max_memory(config)
+    

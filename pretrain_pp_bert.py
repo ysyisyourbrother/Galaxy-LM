@@ -12,6 +12,7 @@ from galaxy.global_vars import initial_args, get_args
 from galaxy.core.pipeline_parallel.schedules import PipelineRuntime
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
 from train_config.bert.pp_bert_config import config
+from galaxy.utils import get_max_memory
 
 
 
@@ -99,6 +100,5 @@ if __name__ == '__main__':
     torch.cuda.synchronize()
     end = time.time()
     print("total time: {} s".format((end - start) ))
-    max_memory = torch.cuda.max_memory_allocated(device=config.device)
-    print("Max memory:  {} ( {} MB ) ".format( max_memory , max_memory /(1024*1024) ))
+    get_max_memory(config)
     print("Finish...")

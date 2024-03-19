@@ -11,7 +11,7 @@ from galaxy.core.pipeline_parallel.schedules_side import PipelineRuntime
 from train_config.bert.side_pp_bert_config import SidePPBertConfig
 from galaxy.models.bert.side_pp_bert_model import SidePPBertModel
 from galaxy.models.bert.bert_side_model import mark_only_side_as_trainable 
-
+from galaxy.utils import get_max_memory
 class StageModel(nn.Module):
     def __init__(self, config):
         super(StageModel, self).__init__()
@@ -91,6 +91,5 @@ if __name__ == '__main__':
     torch.cuda.synchronize()
     end = time.time()
     print("total time: {} s".format((end - start) ))
-    max_memory = torch.cuda.max_memory_allocated(device=config.device)
-    print("Max memory:  {} ( {} MB ) ".format( max_memory , max_memory /(1024*1024) ))
+    get_max_memory(config)
     print("Finish...")

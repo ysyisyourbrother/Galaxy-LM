@@ -12,7 +12,7 @@ from galaxy.initialize import initialize_galaxy
 from galaxy.global_vars import get_args
 from galaxy.utils import clean_up
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
-
+from galaxy.utils import get_max_memory
 
 class Model(nn.Module):
     def __init__(self, config):
@@ -88,4 +88,5 @@ if __name__ == '__main__':
     time_usage = get_time_dif(start_time)
     print(time_usage)
     print(f"{time_usage.seconds} (seconds)")
+    get_max_memory(config)
     clean_up()

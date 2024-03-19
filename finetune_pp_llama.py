@@ -11,7 +11,7 @@ from galaxy.initialize import initialize_galaxy,get_args
 from galaxy.core.pipeline_parallel.schedules import PipelineRuntime
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
 from galaxy.tokenizer.tokenizer import BertTokenizer
-from galaxy.utils import clean_up
+from galaxy.utils import clean_up, get_max_memory
 
 class  StageModel(nn.Module):
     def __init__(self, config):
@@ -100,3 +100,4 @@ if __name__ == '__main__':
     time_usage = get_time_dif(start_time)
     print(time_usage)
     print(f"{time_usage.seconds} (seconds)")
+    get_max_memory(config)

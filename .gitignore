@@ -198,3 +198,6 @@ galaxy/llama/output/
 exclude-file.txt
 galaxy/moe/res_init.txt
 galaxy/moe/res.txt
+test_t5.py
+1.py
+test_memory.py
