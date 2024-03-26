@@ -86,22 +86,23 @@ class T5Config(PretrainedConfig):
         self.use_side = False
         self.side_reduction_factor = 8
         self.add_bias_sampling = True
-        # side-only, forward free
-        self.use_side_only = False
         self.check_adapter_config()
-
+        #########################################
+        ''' Distributed Configuration '''
+        self.init_method = "tcp://127.0.0.1:23000"                         # torch.dist.init_process_group中使用的master device    
+        self.distributed_backend = "gloo"
+        
     def check_adapter_config(self):
-        if self.use_lora :
+        if self.use_lora:
             assert self.lora_dim > 0
         if self.use_adapter:
             assert self.adapter_reduction_dim > 0
-        if self.use_side or self.use_side_only:
+        if self.use_side:
             assert self.side_reduction_factor > 0
         #full / lora / adapter / side 只能一个true
         true_count = sum([1 for value in [self.use_lora, 
                                       self.use_adapter,
                                       self.use_side,
-                                      self.use_side_only,
                                       self.full_model] if value])
         assert true_count == 1
         print("========== check adapter config ==========")
@@ -113,8 +114,6 @@ class T5Config(PretrainedConfig):
             print("use side")
         if self.full_model:
             print("full model")
-        if self.use_side_only:
-            print("use side only")
         print("==========                       ==========")
         
     def load_from_json(self,config_file):
@@ -199,12 +198,11 @@ class T5Config(PretrainedConfig):
         if self.use_side:
             self.side_reduction_factor =  config_dict["side_reduction_factor"]
             self.add_bias_sampling =  config_dict["add_bias_sampling"]
-        # side only:
-        self.use_side_only =  config_dict["use_side_only"]
-        if self.use_side_only:
-            self.side_reduction_factor =  config_dict["side_reduction_factor"]
-            self.add_bias_sampling =  config_dict["add_bias_sampling"]
         self.check_adapter_config()
+        #######################################
+        # Distributed Configuration
+        self.init_method = config_dict["init_method"]                       # torch.dist.init_process_group中使用的master device
+        self.distributed_backend = config_dict["distributed_backend"] # 通信后端
     def print_config(self):
         for k,v in self.__dict__.items():
             print(k,v)

@@ -8,7 +8,8 @@ from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 from galaxy.models.bert.bert_side_model import SideBertModel 
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.loralib.utils import  get_parameter_number
-from galaxy.utils import get_max_memory,mark_only_side_as_trainable
+from galaxy.utils import get_max_memory
+from galaxy.adapters.utils import mark_only_side_as_trainable
 
 
 

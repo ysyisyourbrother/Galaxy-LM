@@ -4,11 +4,11 @@ import torch.nn.functional as F
 import time
 import argparse
 from train_config.t5.t5_config import T5Config
-from galaxy.models.t5.t5_model import T5Model
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
-from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
+from galaxy.loralib.utils import  get_parameter_number
 from galaxy.utils import get_max_memory
+from galaxy.adapters.utils import modify_model_for_peft
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_file',default=None ,type=str)
@@ -18,7 +18,16 @@ class  Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
         self.config = config
-        self.base_model = T5Model(config)
+        if config.use_side:
+            from galaxy.models.t5.t5_side_model import T5SideModel 
+            self.base_model = T5SideModel(config)
+        elif config.use_side_only: # forward free
+            from galaxy.models.t5.t5_side_only import T5SideOnly
+            self.base_model = T5SideOnly(config)
+        else: # full / lora / adapter
+            from galaxy.models.t5.t5_model import T5Model
+            self.base_model = T5Model(config)
+        modify_model_for_peft(self.base_model, config)
         self.lm_head = nn.Linear(config.d_model, config.num_classes, bias=False)
     def forward(self, x):
         input_ids = (x[0]).to(self.config.device) # [bs,seq]
@@ -50,11 +59,10 @@ if __name__ == '__main__':
     mem_before = torch.cuda.memory_allocated()
     model = Model(config).to(config.device)
     mem_after = torch.cuda.memory_allocated()
+    print(model)
     print("Model memory usage: {} ( {} MB ) ".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024) ))
     if config.train:
         model.train()
-        print('number of base model parameters:', get_parameter_number(model.base_model))
-        print('number of fc parameters:', get_parameter_number(model.lm_head))
         print("Start training")
     else:
         model.eval()

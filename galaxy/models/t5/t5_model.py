@@ -20,21 +20,9 @@ import math
 import os
 import warnings
 from typing import List, Optional, Tuple, Union
-
 import torch
 from torch import nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
-
 from transformers.activations import ACT2FN
-from transformers.modeling_outputs import (
-    BaseModelOutput,
-    BaseModelOutputWithPastAndCrossAttentions,
-    Seq2SeqLMOutput,
-    Seq2SeqModelOutput,
-    Seq2SeqQuestionAnsweringModelOutput,
-    Seq2SeqSequenceClassifierOutput,
-    TokenClassifierOutput,
-)
 from transformers.modeling_utils import PreTrainedModel
 from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS, find_pruneable_heads_and_indices, prune_linear_layer
 from transformers.utils import (
@@ -47,7 +35,8 @@ from transformers.utils import (
     replace_return_docstrings,
 )
 from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
-
+from galaxy.loralib.layers import  Linear as LoraLinear
+from galaxy.adapters.utils import Adapter
 
 
 logger = logging.get_logger(__name__)
@@ -331,17 +320,21 @@ class T5DenseGatedActDense(nn.Module):
 class T5LayerFF(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.config = config
         if config.is_gated_act:
             self.DenseReluDense = T5DenseGatedActDense(config)
         else:
             self.DenseReluDense = T5DenseActDense(config)
-
+        if self.config.use_adapter:
+            self.adapter_layer = Adapter(config)
         self.layer_norm = T5LayerNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.dropout = nn.Dropout(config.dropout_rate)
 
     def forward(self, hidden_states):
         forwarded_states = self.layer_norm(hidden_states)
         forwarded_states = self.DenseReluDense(forwarded_states)
+        if self.config.use_adapter:
+            forwarded_states = self.adapter_layer(forwarded_states)
         hidden_states = hidden_states + self.dropout(forwarded_states)
         return hidden_states
 
@@ -360,9 +353,28 @@ class T5Attention(nn.Module):
         self.inner_dim = self.n_heads * self.key_value_proj_dim
 
         # Mesh TensorFlow initialization to avoid scaling before softmax
-        self.q = nn.Linear(self.d_model, self.inner_dim, bias=False)
+        if config.use_lora:
+            self.q = LoraLinear(config.d_model, 
+                               self.inner_dim,
+                               r = config.lora_dim,
+                               lora_alpha = config.lora_alpha,
+                               lora_dropout = config.lora_dropout,
+                               fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                               merge_weights = config.merge_weights) 
+            self.v = LoraLinear(config.d_model, 
+                               self.inner_dim,
+                               r = config.lora_dim,
+                               lora_alpha = config.lora_alpha,
+                               lora_dropout = config.lora_dropout,
+                               fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                               merge_weights = config.merge_weights) 
+        else:
+            self.q = nn.Linear(self.d_model, self.inner_dim, bias=False)
+            self.v = nn.Linear(self.d_model, self.inner_dim, bias=False)
+
+            
+            
         self.k = nn.Linear(self.d_model, self.inner_dim, bias=False)
-        self.v = nn.Linear(self.d_model, self.inner_dim, bias=False)
         self.o = nn.Linear(self.inner_dim, self.d_model, bias=False)
 
         if self.has_relative_attention_bias:
@@ -584,10 +596,12 @@ class T5Attention(nn.Module):
 class T5LayerSelfAttention(nn.Module):
     def __init__(self, config, has_relative_attention_bias=False):
         super().__init__()
+        self.config = config
         self.SelfAttention = T5Attention(config, has_relative_attention_bias=has_relative_attention_bias)
         self.layer_norm = T5LayerNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.dropout = nn.Dropout(config.dropout_rate)
-
+        if self.config.use_adapter:
+            self.adapter_layer = Adapter(config)
     def forward(
         self,
         hidden_states,
@@ -608,7 +622,10 @@ class T5LayerSelfAttention(nn.Module):
             use_cache=use_cache,
             output_attentions=output_attentions,
         )
-        hidden_states = hidden_states + self.dropout(attention_output[0])
+        y = attention_output[0]
+        if self.config.use_adapter:
+            y = self.adapter_layer(y)
+        hidden_states = hidden_states + self.dropout(y)
         outputs = (hidden_states,) + attention_output[1:]  # add attentions if we output them
         return outputs
 
@@ -967,7 +984,7 @@ class T5Stack(T5PreTrainedModel):
         head_mask = self.get_head_mask(head_mask, self.config.num_layers)
         cross_attn_head_mask = self.get_head_mask(cross_attn_head_mask, self.config.num_layers)
         hidden_states = self.dropout(inputs_embeds)
-
+        
         for i, (layer_module, _) in enumerate(zip(self.block, past_key_values)):
             layer_head_mask = head_mask[i]
             cross_attn_layer_head_mask = cross_attn_head_mask[i]
@@ -1007,6 +1024,7 @@ class T5Model(T5PreTrainedModel):
 
         decoder_config = copy.deepcopy(config)
         decoder_config.is_decoder = True
+        encoder_config.use_cache = False
         decoder_config.is_encoder_decoder = False
         decoder_config.num_layers = config.num_decoder_layers
         self.decoder = T5Stack(decoder_config, self.shared)
@@ -1015,30 +1033,17 @@ class T5Model(T5PreTrainedModel):
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
-        decoder_attention_mask: Optional[torch.BoolTensor] = None,
-        head_mask: Optional[torch.FloatTensor] = None,
-        decoder_head_mask: Optional[torch.FloatTensor] = None,
-        cross_attn_head_mask: Optional[torch.Tensor] = None,
         encoder_outputs: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
         decoder_inputs_embeds: Optional[torch.Tensor] = None,
     ):
         decoder_input_ids = torch.zeros([self.config.batch_size,1], dtype=torch.long).to(self.config.device) #TODO: 先这样
-        # FutureWarning: head_mask was separated into two input args - head_mask, decoder_head_mask
-        if head_mask is not None and decoder_head_mask is None:
-            if self.config.num_layers == self.config.num_decoder_layers:
-                warnings.warn(__HEAD_MASK_WARNING_MSG, FutureWarning)
-                decoder_head_mask = head_mask
-
-        # Encode if needed (training, first prediction pass)
         if encoder_outputs is None:
             encoder_outputs = self.encoder(
-                input_ids=input_ids,
-                inputs_embeds=inputs_embeds,
-            )
+                    input_ids=input_ids,
+                    inputs_embeds=inputs_embeds,
+                )
         hidden_states = encoder_outputs 
         decoder_outputs = self.decoder(
             input_ids=decoder_input_ids,

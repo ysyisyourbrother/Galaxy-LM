@@ -16,7 +16,4 @@ def get_max_memory(config):
     print("Max memory:  {} ( {} MB ) ".format( max_memory , max_memory /(1024*1024) ))
 
 
-def mark_only_side_as_trainable(model: nn.Module)  -> None:
-    for n, p in model.named_parameters():
-        if 'side_' not in n:
-            p.requires_grad = False
+

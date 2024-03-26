@@ -124,6 +124,8 @@ class PPLlamaConfig():
         self.init_method = config_dict["init_method"]                       # torch.dist.init_process_group中使用的master device
         self.distributed_backend = config_dict["distributed_backend"] # 通信后端
         self.stage_num_hidden_layers_list = config_dict["stage_num_hidden_layers_list"]
+        if sum(self.stage_num_hidden_layers_list) != self.num_hidden_layers:
+            raise ValueError("sum of stage_hidden_layers_num_list should be equal to num_hidden_layers")
         self.num_microbatches = config_dict["num_microbatches"]
         self.num_iterations = config_dict["num_iterations"]
         # Lora
