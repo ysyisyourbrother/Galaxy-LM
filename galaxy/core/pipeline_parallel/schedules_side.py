@@ -123,15 +123,15 @@ class PipelineRuntime():
         input_gradient = None
         # 接收下一个stage传来的梯度
         output_gradient = self.receive_tensors_backward()
-        #TODO: 输入有 fw_in  和 fw_in_side 两个
+        # 输入有 fw_in, side tuning fw_in 不需要计算梯度
         if self.stage == self.total_stage - 1:
             # 最后一个stage的output为loss
             output_tensor = tensors["loss"]
-            input_tensor = tensors["fw_in"]
+            # input_tensor = tensors["fw_in"]
             input_tensor_side = tensors["fw_in_side"]
         else:
             output_tensor = tensors["fw_out_side"] #
-            input_tensor = tensors["fw_in_side"]
+            # input_tensor = tensors["fw_in_side"]
             input_tensor_side = tensors["fw_in_side"]
 
         # register_hook会在反向传播过程中被触发，并且传入参数为梯度

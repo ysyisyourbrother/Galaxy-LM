@@ -184,13 +184,6 @@ class T5SideOnly(T5PreTrainedModel):
         decoder_inputs_embeds: Optional[torch.Tensor] = None,
     ):
         decoder_input_ids = torch.zeros([self.config.batch_size,1], dtype=torch.long).to(self.config.device) #TODO: 先这样
-        # FutureWarning: head_mask was separated into two input args - head_mask, decoder_head_mask
-        # if head_mask is not None and decoder_head_mask is None:
-        #     if self.config.num_layers == self.config.num_decoder_layers:
-        #         warnings.warn(__HEAD_MASK_WARNING_MSG, FutureWarning)
-        #         decoder_head_mask = head_mask
-
-        # Encode if needed (training, first prediction pass)
         if encoder_outputs is None:
             side_encoder_outputs = self.encoder(
                 # input_ids=input_ids,
@@ -211,3 +204,47 @@ class T5SideOnly(T5PreTrainedModel):
         sequence_output = self.side_final_upsample(side_encoder_outputs)
         sequence_output = sequence_output + decoder_outputs
         return decoder_outputs  
+
+class T5SideOnlyPP(T5PreTrainedModel):
+    _keys_to_ignore_on_load_unexpected = [
+        "decoder.block.0.layer.1.EncDecAttention.relative_attention_bias.weight",
+    ]
+    _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.config = config
+        self.shared = nn.Embedding(config.vocab_size, config.d_model)
+        if config.is_encoder:
+            encoder_config = copy.deepcopy(config)
+            encoder_config.is_decoder = False
+            encoder_config.use_cache = False
+            encoder_config.num_layers = config.num_pp_encoder_layers
+            encoder_config.is_encoder_decoder = False
+            if config.is_encoder_first:
+                self.encoder = T5SideOnlyStack(encoder_config, self.shared)
+            else:
+                self.encoder = T5SideOnlyStack(encoder_config, None)
+        if config.is_decoder:
+            decoder_config = copy.deepcopy(config)
+            decoder_config.is_decoder = True
+            decoder_config.use_cache = False
+            decoder_config.is_encoder_decoder = False
+            decoder_config.num_layers = config.num_pp_decoder_layers
+            if config.is_decoder_first:
+                self.decoder = T5SideOnlyStack(decoder_config, self.shared)
+            else:
+                self.decoder = T5SideOnlyStack(decoder_config, None)
+        def forward(
+            self,
+            input_ids: Optional[torch.LongTensor] = None,
+            decoder_input_ids: Optional[torch.LongTensor] = None,
+            head_mask: Optional[torch.FloatTensor] = None,
+            decoder_head_mask: Optional[torch.FloatTensor] = None,
+            encoder_outputs: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+            inputs_embeds: Optional[torch.Tensor] = None,
+            decoder_inputs_embeds: Optional[torch.Tensor] = None,
+        ):
+            if self.config.is_encoder:
+                if self.config.is_encoder_first:
+                    

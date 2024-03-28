@@ -2,7 +2,8 @@ import torch
 import os
 import json 
 from transformers.configuration_utils import PretrainedConfig
-class T5Config(PretrainedConfig):
+
+class T5PPConfig(PretrainedConfig ):
     # model_type = "t5"
     # keys_to_ignore_at_inference = ["past_key_values"]
     # attribute_map = {"hidden_size": "d_model", "num_attention_heads": "num_heads", "num_hidden_layers": "num_layers"}
@@ -23,8 +24,8 @@ class T5Config(PretrainedConfig):
         else:
             self.device = torch.device('cpu')
         self.num_epochs = 3                                             # epoch数
-        self.batch_size = 4                                           # mini-batch大小
-        self.pad_size = 32                                              # 每句话处理成的长度(短填长切)
+        self.batch_size = 4                                              # mini-batch大小
+        self.pad_size = 128                                              # 每句话处理成的长度(短填长切)
         self.learning_rate = 5e-5       
         self.class_list = [x.strip() for x in open(
             "dataset/THUCNews/data/class.txt").readlines()]                                # 类别名单
@@ -68,7 +69,7 @@ class T5Config(PretrainedConfig):
         self.use_cache = False
         self.output_attentions = False  
         self.output_hidden_states = False
-        #############################################
+        ###########################################
         # full model
         self.full_model = True
         # lora
@@ -88,12 +89,41 @@ class T5Config(PretrainedConfig):
         self.add_bias_sampling = True
         # side-only, forward free
         self.use_side_only = False
+        
+        # TODO:side only
         self.check_adapter_config()
-        #########################################
-        ''' Distributed Configuration '''
+        # Distributed Configuration
         self.init_method = "tcp://127.0.0.1:23000"                         # torch.dist.init_process_group中使用的master device    
         self.distributed_backend = "gloo"
-        
+        self.stage_num_hidden_layers_list = [6,6,6,6] 
+        self.num_microbatches = 2
+        self.num_iterations = 1
+        #  Pipeline Configuration
+        self.stage = None
+        self.total_stage = None
+        self.pre_rank = None
+        self.next_rank = None
+        self.is_first_stage = None
+        self.is_last_stage = None
+        self.left_layer_index = None
+        self.right_layer_index = None
+        self.num_pp_encoder_layers = None
+        self.num_pp_decoder_layers = None
+        self.is_encoder = None
+        self.is_encoder_first = None
+        self.is_encoder_last = None
+        self.is_decoder = None
+        self.is_decoder_first = None
+        self.is_decoder_last = None
+    
+    def check_pp_config(self):
+        if self.total_stage==1:
+            raise ValueError("total_stage should > 1")
+        if self.total_stage != len(self.stage_num_hidden_layers_list):
+            raise ValueError("total_stage != len(stage_num_hidden_layers_list)")
+        if sum(self.stage_num_hidden_layers_list) != self.num_layers +  self.num_decoder_layers:
+            raise ValueError("sum of stage_hidden_layers_num_list should be equal to num_hidden_layers")
+    
     def check_adapter_config(self):
         if self.use_lora :
             assert self.lora_dim > 0
@@ -120,7 +150,7 @@ class T5Config(PretrainedConfig):
         if self.use_side_only:
             print("use side only")
         print("==========                       ==========")
-        
+    
     def load_from_json(self,config_file):
         if not os.path.exists(config_file):
             raise FileNotFoundError("config file: {} not found".format(config_file))
@@ -182,7 +212,7 @@ class T5Config(PretrainedConfig):
         self.use_cache = False
         self.output_attentions = False  
         self.output_hidden_states = False
-        #############################################
+        ########################################################### 
         # full model
         self.full_model = config_dict["full_model"]
         # Lora
@@ -209,10 +239,43 @@ class T5Config(PretrainedConfig):
             self.side_reduction_factor =  config_dict["side_reduction_factor"]
             self.add_bias_sampling =  config_dict["add_bias_sampling"]
         self.check_adapter_config()
-        #######################################
+        ##############################################################
         # Distributed Configuration
         self.init_method = config_dict["init_method"]                       # torch.dist.init_process_group中使用的master device
         self.distributed_backend = config_dict["distributed_backend"] # 通信后端
+        self.stage_num_hidden_layers_list = config_dict["stage_num_hidden_layers_list"]
+        self.num_microbatches = config_dict["num_microbatches"]
+        self.num_iterations = config_dict["num_iterations"]
+        
     def print_config(self):
         for k,v in self.__dict__.items():
             print(k,v)
+    def update_pp_stage_config(self, args):
+        self.stage = args.rank
+        self.total_stage =args.world 
+        self.pre_rank = None if self.stage == 0 else self.stage - 1
+        self.next_rank = None if self.stage  == self.total_stage -1 else self.stage + 1
+        self.is_first_stage = (self.stage ==0)  # 第一个需要过embedding
+        self.is_last_stage =  (self.stage  ==  self.total_stage - 1)   #最后一层需要过 和lm_head
+        
+        self.left_layer_index = sum(self.stage_num_hidden_layers_list[:self.stage  ]) + 1
+        self.right_layer_index = sum(self.stage_num_hidden_layers_list[:self.stage + 1])
+        if  self.right_layer_index <= self.num_layers:
+            self.num_pp_encoder_layers = self.right_layer_index  - self.left_layer_index + 1
+            self.num_pp_decoder_layers = 0
+        elif   self.left_layer_index <=  self.num_layers:
+            self.num_pp_encoder_layers =  self.num_layers - self.left_layer_index + 1
+            self.num_pp_decoder_layers = self.right_layer_index - (self.num_layers+1) + 1
+        else:
+            self.num_pp_encoder_layers = 0
+            self.num_pp_decoder_layers =  self.right_layer_index  - self.left_layer_index + 1
+        self.is_encoder = self.num_pp_encoder_layers > 0
+        self.is_encoder_first = (self.left_layer_index == 1)
+        self.is_encoder_last = (self.right_layer_index == self.num_layers)
+        self.is_decoder = self.num_pp_decoder_layers > 0
+        self.is_decoder_first = (self.left_layer_index == self.num_layers + 1 )
+        self.is_decoder_last = (self.right_layer_index == self.num_layers * 2)
+        if self.is_encoder and self.is_decoder:
+            raise ValueError("Not support encoder and decoder at the same time")
+        print("== update PP stage config \n== stage={}\n, total_stage={}\n, left index={}, right index={}, num_pp_encoder_layers={}, num_pp_decoder_layers={}".format(self.stage, self.total_stage, self.left_layer_index, self.right_layer_index, self.num_pp_encoder_layers, self.num_pp_decoder_layers))
+        self.check_pp_config()

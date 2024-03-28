@@ -6,7 +6,6 @@ import argparse
 from train_config.t5.t5_config import T5Config
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
-from galaxy.loralib.utils import  get_parameter_number
 from galaxy.utils import get_max_memory
 from galaxy.adapters.utils import modify_model_for_peft
 def parse_args():
@@ -18,10 +17,10 @@ class  Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
         self.config = config
-        if config.use_side:
+        if config.use_side: # side 
             from galaxy.models.t5.t5_side_model import T5SideModel 
             self.base_model = T5SideModel(config)
-        elif config.use_side_only: # forward free
+        elif config.use_side_only: # forward free side 
             from galaxy.models.t5.t5_side_only import T5SideOnly
             self.base_model = T5SideOnly(config)
         else: # full / lora / adapter

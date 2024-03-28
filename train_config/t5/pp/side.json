@@ -6,7 +6,7 @@
     "train": true,
     "device": "cuda",
     "num_epochs": 1,
-    "batch_size": 8,
+    "batch_size": 4,
     "pad_size": 128,
     "learning_rate": 5e-5,
     "class_list_path": "dataset/THUCNews/data/class.txt",
@@ -33,12 +33,21 @@
     "use_cache": false,
     "output_attentions": false,
     "output_hidden_states": false,
-    "init_method": "tcp://127.0.0.1:23000",
-    "distributed_backend": "gloo",
+
+    
     "full_model" : false,
     "use_lora": false,
-    "use_adapter": true,
-    "use_side": false,
-    "adapter_reduction_dim": 16,
-    "non_linearity": "gelu_new"
+    "use_adapter": false,
+    "use_side": true,
+    "use_side_only": false,
+    "side_reduction_factor":8,
+    "add_bias_sampling": true,
+    
+    "init_method": "tcp://127.0.0.1:23000",
+    "distributed_backend": "gloo",
+    "stage_num_hidden_layers_list": [12,12],
+    "num_microbatches": 1,
+    "num_iterations":1
+
+
 }

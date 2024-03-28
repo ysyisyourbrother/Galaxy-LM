@@ -38,7 +38,8 @@
     "full_model" : false,
     "use_lora": false,
     "use_adapter": false,
-    "use_side": true,
+    "use_side": false,
+    "use_side_only": true,
     "side_reduction_factor":8,
     "add_bias_sampling": true
 } 

@@ -17,6 +17,7 @@ def get_parameter_number(model):
 
 
 def mark_only_lora_as_trainable(model: nn.Module, bias: str = 'none') -> None:
+    print("mark only lora as trainable....")
     for n, p in model.named_parameters():
         if 'lora_' not in n:
             p.requires_grad = False

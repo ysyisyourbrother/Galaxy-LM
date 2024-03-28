@@ -33,10 +33,18 @@
     "use_cache": false,
     "output_attentions": false,
     "output_hidden_states": false,
-    "init_method": "tcp://127.0.0.1:23000",
-    "distributed_backend": "gloo",
-    "full_model" : true,
+    
+    "full_model" : false,
     "use_lora": false,
     "use_adapter": false,
-    "use_side": false
-}
+    "use_side": true,
+    "use_side_only": false,
+    "side_reduction_factor":8,
+    "add_bias_sampling": true,
+
+    "init_method": "tcp://127.0.0.1:23000",
+    "distributed_backend": "gloo"
+
+
+} 
+    

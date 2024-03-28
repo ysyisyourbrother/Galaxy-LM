@@ -2,7 +2,7 @@ import torch
 import contextlib
 import itertools
 import time
-from galaxy.core.pipeline_parallel.communication_t5  import CommunicationHandler
+from galaxy.core.pipeline_parallel.communication_t5_side import CommunicationHandler
 from galaxy.global_vars import get_args
 import datetime
 
@@ -37,26 +37,38 @@ class PipelineRuntime():
         if self.stage == self.total_stage-1:
             return 
         if self.config.is_encoder :  # encoder-only
-            if not  self.config.is_encoder_last: # 不是最后一层encoder,传encoder_hidden_states
+            if not self.config.is_encoder_last: # 不是最后一层encoder,传encoder_hidden_states
                 tensor = self.tensors[-1]["fw_out"]
-            # 发送tensor到下一个stage
-                self.comm_handler.send(tensor, backward=False,encoder_output=False)
+                side_tensor = self.tensors[-1]["side_fw_out"]
+                self.comm_handler.send(tensor, backward=False,encoder_output=False,side=False)
+                self.comm_handler.send(side_tensor, backward=False,encoder_output=False,side=True)
                 print("Stage {} send forward hidden_states shape {} type {}".format(self.stage , tensor.shape, tensor.dtype))
+                print("Stage {} send side forward hidden_states shape {} type {}".format(self.stage , side_tensor.shape, side_tensor.dtype))
             if self.config.is_encoder_last: # 最后一层encoder
                 # 发送encoder outputs
                 encoder_outputs_tensor = self.tensors[-1]["fw_out_encoder_output"]
+                side_encoder_outputs_tensor = self.tensors[-1]["side_fw_out_encoder_output"]            
+                self.comm_handler.send(encoder_outputs_tensor, backward=False, encoder_output=True,side=False)
+                self.comm_handler.send(side_encoder_outputs_tensor, backward=False, encoder_output=True,side=True)
                 print("Stage {} send  fw_out_encoder_output shape {} type {}".format(self.stage , encoder_outputs_tensor.shape, encoder_outputs_tensor.dtype))
-                self.comm_handler.send(encoder_outputs_tensor, backward=False, encoder_output=True)
+                print("Stage {} send  side fw_out_encoder_output shape {} type {}".format(self.stage , side_encoder_outputs_tensor.shape, side_encoder_outputs_tensor.dtype))
+
         elif  self.config.is_decoder : # decoder-only
             if not  self.config.is_decoder_last: # 不是最后一层decoder
                 tensor = self.tensors[-1]["fw_out"]
-                print("Stage {} send forward tensor shape {} type {}".format(self.stage , tensor.shape, tensor.dtype))
+                side_tensor = self.tensors[-1]["side_fw_out"]
                 self.comm_handler.send(tensor, backward=False,encoder_output=False)
+                self.comm_handler.send(side_tensor, backward=False,encoder_output=False,side=True)
+                print("Stage {} send forward tensor shape {} type {}".format(self.stage , tensor.shape, tensor.dtype))
+                print("Stage {} send side forward hidden_states shape {} type {}".format(self.stage , side_tensor.shape, side_tensor.dtype))
+
                 encoder_outputs_tensor = self.tensors[-1]["fw_out_encoder_output"]
+                side_encoder_outputs_tensor = self.tensors[-1]["side_fw_out_encoder_output"]            
+                self.comm_handler.send(encoder_outputs_tensor, backward=False, encoder_output=True,side=False)
+                self.comm_handler.send(side_encoder_outputs_tensor, backward=False, encoder_output=True,side=True)
                 print("Stage {} send  fw_out_encoder_output shape {} type {}".format(self.stage , encoder_outputs_tensor.shape, encoder_outputs_tensor.dtype))
-                self.comm_handler.send(encoder_outputs_tensor, backward=False, encoder_output=True)
-            
-        
+                print("Stage {} send  side fw_out_encoder_output shape {} type {}".format(self.stage , side_encoder_outputs_tensor.shape, side_encoder_outputs_tensor.dtype))
+
         
         
         
@@ -69,112 +81,137 @@ class PipelineRuntime():
         # 如果是decoder 且非第一层，获得encoder output 和 hidden states
         self.tensors.append({})
         self.tensors[-1]["fw_in"]  = None
+        self.tensors[-1]["side_fw_in"]  = None
         self.tensors[-1]["fw_in_encoder_output"] = None
+        self.tensors[-1]["side_fw_in_encoder_output"] = None
         if self.config.is_encoder  :  # encoder-only
             if self.config.is_encoder_first: #  第一层encoder
                 if input_sample is not None:
                     inputs, _ = input_sample
                     self.tensors[-1]["fw_in"] = inputs 
                     print("Stage {} receive input_sample ".format(self.stage  ))
-                    return self.tensors[-1]["fw_in"], None # sample 不需要cuda
+                    return self.tensors[-1]["fw_in"], None , None , None # sample 不需要cuda
                 else:
                     raise Exception("Missing input.")
-            else: #  从前面encoder 获得 hidden_states
-                tensor = self.comm_handler.recv(backward=False, encoder_output=False )
+            else: #  从前面encoder 获得 hidden_states 以及side_hidden_states
+                tensor = self.comm_handler.recv(backward=False, encoder_output=False ,side=False)
+                side_tensor = self.comm_handler.recv(backward=False,encoder_output=False,side=True)
                 print("Stage {} receive hidden_states size {}  ".format(self.stage, tensor.shape  ))
+                print("Stage {} receive side hidden_states size {}  ".format(self.stage, side_tensor.shape  ))
                 self.tensors[-1]["fw_in"]  = tensor
+                self.tensors[-1]["side_fw_in"]  = side_tensor
                 if self.if_cuda: 
                         self.tensors[-1]["fw_in"] = self.tensors[-1]["fw_in"].cuda()
-                return self.tensors[-1]["fw_in"], None
+                        self.tensors[-1]["side_fw_in"] = self.tensors[-1]["side_fw_in"].cuda()
+                return self.tensors[-1]["fw_in"], self.tensors[-1]["side_fw_in"], None, None
         elif self.config.is_decoder: # decoder-only
             if not self.config.is_decoder_first: # 不是第一层decoder
-                tensor = self.comm_handler.recv(backward=False, encoder_output=False ) # 从前面decoder 获得 hidden_states， 否则None
+                tensor = self.comm_handler.recv(backward=False, encoder_output=False, side=False) # 从前面decoder 获得 hidden_states， 否则None
+                side_tensor = self.comm_handler.recv(backward=False,encoder_output=False,side=True)
                 self.tensors[-1]["fw_in"] = tensor
+                self.tensors[-1]["side_fw_in"]  = side_tensor
             # 全部都要decoder接受encoder output
-            encoder_output_tensor = self.comm_handler.recv(backward=False, encoder_output=True )
+            encoder_output_tensor = self.comm_handler.recv(backward=False, encoder_output=True , side=False)
+            side_encoder_output_tensor = self.comm_handler.recv(backward=False, encoder_output=True , side=True)
             self.tensors[-1]["fw_in_encoder_output"] = encoder_output_tensor
+            self.tensors[-1]["side_fw_in_encoder_output"] = side_encoder_output_tensor
             if self.if_cuda:
                 if self.tensors[-1]["fw_in"] is not None:
                     self.tensors[-1]["fw_in"] = self.tensors[-1]["fw_in"].cuda()
+                if self.tensors[-1]["side_fw_in"] is not None:
+                    self.tensors[-1]["side_fw_in"] = self.tensors[-1]["side_fw_in"].cuda()
                 if self.tensors[-1]["fw_in_encoder_output"] is not None:
                     self.tensors[-1]["fw_in_encoder_output"] = self.tensors[-1]["fw_in_encoder_output"].cuda()
+                if self.tensors[-1]["side_fw_in_encoder_output"] is not None:
+                    self.tensors[-1]["side_fw_in_encoder_output"] = self.tensors[-1]["side_fw_in_encoder_output"].cuda()
             
-            return self.tensors[-1]["fw_in"], self.tensors[-1]["fw_in_encoder_output"]
+            return self.tensors[-1]["fw_in"], self.tensors[-1]["side_fw_in"],self.tensors[-1]["fw_in_encoder_output"],self.tensors[-1]["side_fw_in_encoder_output"]
 
 
-    def send_tensors_backward(self, gradients, encoder_output_gradients ):
+    def send_tensors_backward(self, side_gradients, side_encoder_output_gradients ):
         # 如果stage为0，则返回
         if self.config.is_encoder:
             if self.config.is_encoder_first:
                 return
             else:
-                self.comm_handler.send(gradients, backward=True, encoder_output=False)
+                self.comm_handler.send(side_gradients, backward=True, encoder_output=False,side=True)
         if self.config.is_decoder:
             if self.config.is_decoder_first:
-                self.comm_handler.send(encoder_output_gradients, backward=True, encoder_output=True)
+                print(side_encoder_output_gradients.shape)
+                self.comm_handler.send(side_encoder_output_gradients, backward=True, encoder_output=True,side=True)
             else:
-                self.comm_handler.send(gradients, backward=True, encoder_output=False)
-                self.comm_handler.send(encoder_output_gradients, backward=True, encoder_output=True)
+                self.comm_handler.send(side_gradients, backward=True, encoder_output=False,side=True)
+                self.comm_handler.send(side_encoder_output_gradients, backward=True, encoder_output=True,side=True)
         # 发送gradients到上一个stage
-        if gradients is not None:
-            print("Stage {} send backward gradients shape {} type {}".format(self.stage , gradients.shape, gradients.dtype))
-        if encoder_output_gradients is not None:
-            print("Stage {} send backward encoder_output_gradients shape {} type {}".format(self.stage , encoder_output_gradients.shape, encoder_output_gradients.dtype))
+        if side_gradients is not None:
+            print("Stage {} send backward side_gradients shape {} type {}".format(self.stage , side_gradients.shape, side_gradients.dtype))
+        if side_encoder_output_gradients is not None:
+            print("Stage {} send backward side_encoder_output_gradients shape {} type {}".format(self.stage , side_encoder_output_gradients.shape, side_encoder_output_gradients.dtype))
     
 
 
     def receive_tensors_backward(self):
         # 最后一个stage，创建空字典
-        gradients = None
-        encoder_output_gradients = None
+        side_gradients = None
+        side_encoder_output_gradients = None
         if self.config.is_encoder: # encoder only
             if self.config.is_encoder_last:
-                gradients = self.comm_handler.recv(backward=True,encoder_output=True)
+                side_encoder_output_gradients = self.comm_handler.recv(backward=True,encoder_output=True,side=True)
             else:
-                gradients = self.comm_handler.recv(backward=True,encoder_output=False)
+                side_gradients = self.comm_handler.recv(backward=True,encoder_output=False,side=True)
         else: # decoder only 
             if self.config.is_decoder_last:
                 pass 
             else:
-                gradients = self.comm_handler.recv(backward=True,encoder_output=False)
-                encoder_output_gradients = self.comm_handler.recv(backward=True,encoder_output=True)
+                side_gradients = self.comm_handler.recv(backward=True,encoder_output=False,side=True)
+                side_encoder_output_gradients = self.comm_handler.recv(backward=True,encoder_output=True,side=True)
             
         if self.if_cuda:
-            if gradients is not None:
-                gradients = gradients.cuda()
-            if encoder_output_gradients is not None:
-                encoder_output_gradients = encoder_output_gradients.cuda()
-        return gradients,encoder_output_gradients
+            if side_gradients is not None:
+                side_gradients = side_gradients.cuda()
+            if side_encoder_output_gradients is not None:
+                side_encoder_output_gradients = side_encoder_output_gradients.cuda()
+        return side_gradients,side_encoder_output_gradients
 
     def run_forward(self, input_sample=None):
         self.num_forward_micro_batch += 1
         print(f"start forward of microbatch {self.num_forward_micro_batch}")
         # 获取前向传播需要的数据
-        fw_input, fw_in_encoder_output= self.receive_tensors_forward(input_sample)
+        fw_input, side_fw_input,fw_in_encoder_output, side_fw_in_encoder_output= self.receive_tensors_forward(input_sample)
         print("Stage {} receive fw_input  ".format(self.stage  ))
         if fw_input is not None and not self.config.is_encoder_first:
-            print("Stage {} fw_input is None ,Shape {}".format(self.stage, fw_input.shape))  
+            print("Stage {} fw_input is Shape {}".format(self.stage, fw_input.shape))  
         if fw_in_encoder_output is not None:
-            print("Stage {} fw_in_encoder_output is None ,Shape {}".format(self.stage, fw_in_encoder_output.shape))
+            print("Stage {} fw_in_encoder_output is Shape {}".format(self.stage, fw_in_encoder_output.shape))
         if self.config.is_encoder  :  # encoder-only
             if self.config.is_encoder_first: #  第一层encoder
-                encoder_outputs  = self.model(fw_input) # input_sample
+                encoder_outputs ,side_encoder_outputs = self.model(fw_input) # input_sample
             else:
-                encoder_outputs  = self.model([fw_input])
+                encoder_outputs,side_encoder_outputs  = self.model([fw_input, side_fw_input])
             self.tensors[-1]["fw_out"] = encoder_outputs
+            self.tensors[-1]["side_fw_out"]  = side_encoder_outputs
             if self.config.is_encoder_last  : # 最后一层encoder
                 self.tensors[-1]["fw_out_encoder_output"] = encoder_outputs
+                self.tensors[-1]["side_fw_out_encoder_output"] = side_encoder_outputs
             self.send_tensors_forward()   
         else: #decoder
             if self.config.is_decoder_last: # 最后一层decoder
-                out = self.model([fw_input, fw_in_encoder_output])
+                out = self.model([fw_input, 
+                                side_fw_input,
+                                fw_in_encoder_output,
+                                side_fw_in_encoder_output])
                 labels = torch.ones(out.shape[0]).cuda().long()
                 loss = self.loss_func(out, labels)
                 self.tensors[-1]["loss"] = loss 
             else : # 不是最后一层decoder
-                decoder_outputs = self.model([fw_input, fw_in_encoder_output])
+                decoder_outputs,side_decoder_outputs = self.model([fw_input, 
+                                                                   side_fw_input,
+                                                                   fw_in_encoder_output,
+                                                                   side_fw_in_encoder_output])
                 self.tensors[-1]["fw_out"] = decoder_outputs
+                self.tensors[-1]["side_fw_out"] = side_decoder_outputs
                 self.tensors[-1]["fw_out_encoder_output"]  = fw_in_encoder_output
+                self.tensors[-1]["side_fw_out_encoder_output"]  = side_fw_in_encoder_output
                 self.send_tensors_forward()
         print(f"finish forward of microbatch {self.num_forward_micro_batch}")
 
@@ -197,21 +234,22 @@ class PipelineRuntime():
             print("output_gradient_for_encoder_outputs:", output_gradient_for_encoder_outputs.shape, output_gradient_for_encoder_outputs.dtype)
 
         if self.config.is_encoder: # encoder 一个输入 一个输出
-            output_tensor = tensors["fw_out"]
-            input_tensor = tensors["fw_in"]
+            output_tensor = tensors["side_fw_out"]
+            input_tensor = tensors["side_fw_in"]
         else: # decoder 
-            if self.config.is_decoder_last: # decoder输入有两个
+            if self.config.is_decoder_last : # decoder输入有两个
                 output_tensor = tensors["loss"]
-                input_tensor = tensors["fw_in"]
-                input_encoder_output = tensors["fw_in_encoder_output"]
+                input_tensor = tensors["side_fw_in"]
+                input_encoder_output = tensors["side_fw_in_encoder_output"]
             else:
-                output_tensor = tensors["fw_out"]
-                input_tensor = tensors["fw_in"]
-                input_encoder_output = tensors["fw_in_encoder_output"]
+                output_tensor = tensors["side_fw_out"]
+                input_tensor = tensors["side_fw_in"]
+                input_encoder_output = tensors["side_fw_in_encoder_output"]
         # register_hook会在反向传播过程中被触发，并且传入参数为梯度
         def hook_wrapper():
             def hook(gradient):
                 nonlocal input_gradient
+                print("Hook called!")  # Debug print to check if the hook is executed
                 input_gradient = gradient
             return hook
         def hook_encoder_output_wrapper():
@@ -227,16 +265,16 @@ class PipelineRuntime():
                 input_tensor.requires_grad_()
                 input_tensor.register_hook(hook_wrapper())
                 if self.config.is_encoder_last:
-                    torch.autograd.backward(tuple([output_tensor]), grad_tensors=tuple([output_gradient_for_encoder_outputs]))
+                    torch.autograd.backward(tuple([output_tensor]),  grad_tensors=tuple([output_gradient_for_encoder_outputs]))
                 else:
                     torch.autograd.backward(tuple([output_tensor]), grad_tensors=tuple([output_gradient]))
-        else:
+        else: # decoder only 
             input_encoder_output.requires_grad_()
             input_encoder_output.register_hook(hook_encoder_output_wrapper())
             if not self.config.is_decoder_first:  #第一个encoder， input也不需要计算梯度
                 input_tensor.requires_grad_()
                 input_tensor.register_hook(hook_wrapper())
-            
+            ##########################################################
             if self.config.is_decoder_last:
                 torch.autograd.backward(tuple([output_tensor]), grad_tensors=None)
             else:

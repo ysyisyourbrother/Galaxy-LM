@@ -34,6 +34,7 @@ class T5SideStack(T5PreTrainedModel):
         encoder_hidden_states=None,
         side_encoder_hidden_states=None,
         inputs_embeds=None,
+        side_inputs_embeds=None,
     ):
         encoder_attention_mask = None
         head_mask = None
@@ -81,7 +82,7 @@ class T5SideStack(T5PreTrainedModel):
         hidden_states = self.dropout(inputs_embeds)
         # side block first input
         side_hidden_states = self.side_first_downsample(hidden_states)
-        
+        # 经过N layer
         for i, (layer_module, _) in enumerate(zip(self.block, past_key_values)):
             layer_head_mask = head_mask[i]
             cross_attn_layer_head_mask = cross_attn_head_mask[i]
@@ -151,35 +152,33 @@ class T5SideModel(T5PreTrainedModel):
         self,
         input_ids: Optional[torch.LongTensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        side_inputs_embeds: Optional[torch.Tensor] = None,
+        encoder_outputs: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        side_encoder_outputs: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        decoder_inputs_embeds: Optional[torch.Tensor] = None,
+        side_decoder_inputs_embeds: Optional[torch.Tensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
         decoder_head_mask: Optional[torch.FloatTensor] = None,
-        encoder_outputs: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-        decoder_inputs_embeds: Optional[torch.Tensor] = None,
     ):
         decoder_input_ids = torch.zeros([self.config.batch_size,1], dtype=torch.long).to(self.config.device) #TODO: 先这样
-        # FutureWarning: head_mask was separated into two input args - head_mask, decoder_head_mask
-        # if head_mask is not None and decoder_head_mask is None:
-        #     if self.config.num_layers == self.config.num_decoder_layers:
-        #         warnings.warn(__HEAD_MASK_WARNING_MSG, FutureWarning)
-        #         decoder_head_mask = head_mask
-
-        # Encode if needed (training, first prediction pass)
-        if encoder_outputs is None:
-            encoder_outputs, side_encoder_outputs = self.encoder(
+        encoder_outputs, side_encoder_outputs = self.encoder(
                 input_ids=input_ids,
                 inputs_embeds=inputs_embeds,
+                side_inputs_embeds=side_inputs_embeds,
             )
+            
         hidden_states = encoder_outputs 
         side_hidden_states = side_encoder_outputs
         decoder_outputs, side_encoder_outputs = self.decoder(
             input_ids=decoder_input_ids,
             inputs_embeds=decoder_inputs_embeds,
+            side_inputs_embeds=side_decoder_inputs_embeds,
             encoder_hidden_states=hidden_states,
             side_encoder_hidden_states=side_hidden_states,
         )
         # merge
         sequence_output = self.side_final_upsample(side_encoder_outputs)
         sequence_output = sequence_output + decoder_outputs
-        return decoder_outputs  
+        return sequence_output  
         
