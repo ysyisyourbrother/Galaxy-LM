@@ -58,7 +58,7 @@ if __name__ == '__main__':
     mem_before = torch.cuda.memory_allocated()
     model = Model(config).to(config.device)
     mem_after = torch.cuda.memory_allocated()
-    print(model)
+    # print(model)
     print("Model memory usage: {} ( {} MB ) ".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024) ))
     if config.train:
         model.train()
@@ -66,7 +66,8 @@ if __name__ == '__main__':
     else:
         model.eval()
         print("Start inferencing")
-    start_time = time.time()
+    torch.cuda.synchronize()
+    start = time.time()
     optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
     for i in range(config.num_epochs):
         print("epoch: ",i)
@@ -77,8 +78,8 @@ if __name__ == '__main__':
                 loss = F.cross_entropy(outputs, labels)
                 loss.backward() 
                 optimizer.step()
+    torch.cuda.synchronize()
+    end = time.time()
     print("Finish...")
-    time_usage = get_time_dif(start_time)
-    print(time_usage)
-    print(f"{time_usage.seconds} (seconds)")
+    print("elapse time: {} s".format(end - start)) # 单位是s, ms *1000
     get_max_memory(config)

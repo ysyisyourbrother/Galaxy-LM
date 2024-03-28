@@ -255,6 +255,7 @@ class PipelineRuntime():
         def hook_encoder_output_wrapper():
             def hook(gradient):
                 nonlocal input_encoder_output_gradient
+                print("hook_encoder_output_wrapper called!") 
                 input_encoder_output_gradient = gradient
             return hook
         

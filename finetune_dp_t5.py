@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     # Prepare Model
     model = Model(config).to(config.device)
-    print(model)
+    # print(model)
     # Train
     if config.train:
         model.train()
@@ -45,25 +45,46 @@ if __name__ == '__main__':
     else:
         model.eval()
         print("Start inferencing")
-
+    # 循环训练
+    forward_time_total = 0.0
+    backward_time_total = 0.0
+    allreduce_time_total = 0.0
     # Prepare DDP Model 因为每台机器只有一块GPU，所以设备ID始终是0。
     ddp_model = DDP(model, device_ids=None,find_unused_parameters=True)
     # TODO: 使用更合适的优化器
     optimizer = torch.optim.SGD(ddp_model.parameters(), lr=config.learning_rate)
-    torch.cuda.synchronize()
-    start = time.time()
+
     for i in range(config.num_epochs):
         print("epoch: ",i)
         for i, (trains, labels) in enumerate(train_iter):
+            ###############################################
+            # Forward 
+            torch.cuda.synchronize()
+            start = time.time()
             outputs = ddp_model(trains)
-            if config.train:
-                ddp_model.zero_grad()
-                loss = F.cross_entropy(outputs, labels)
-                loss.backward()
-                optimizer.step()
+            loss = F.cross_entropy(outputs, labels)
+            torch.cuda.synchronize()
+            end = time.time()
+            forward_time_total += (end - start)
+            ################################################
+            # Backward
+            torch.cuda.synchronize()
+            start = time.time()
+            ddp_model.zero_grad()
+            loss.backward()
+            torch.cuda.synchronize()
+            end = time.time()
+            backward_time_total += (end - start)
+            ##########################################
+            torch.cuda.synchronize()
+            start = time.time()
+            optimizer.step()
+            torch.cuda.synchronize()
+            end = time.time()
+            allreduce_time_total += (end - start)
     # clean_up()
-    torch.cuda.synchronize()
-    end = time.time()
     print("Finish...")
-    print("elapse time: {} s".format(end - start)) # 单位是s, ms *1000
+    print("Forward time: {} s".format(forward_time_total))
+    print("Backward time: {} s".format(backward_time_total))
+    print("Allreduce time: {} s".format(allreduce_time_total))
     get_max_memory(config)

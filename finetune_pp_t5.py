@@ -62,7 +62,6 @@ if __name__ == '__main__':
     #TODO: train_iter 会用完
     for i in range(config.num_iterations):
         runtime.forward_backward_pipelining()
-    time.sleep(10)
     print("Finish...")
     time_usage = get_time_dif(start_time)
     print(time_usage)

@@ -14,7 +14,7 @@
 # limitations under the License.
 """ PyTorch T5 model."""
 
-
+from torch import Tensor
 import copy
 import math
 import os
@@ -22,207 +22,242 @@ import warnings
 from typing import List, Optional, Tuple, Union
 import torch
 from torch import nn
-from transformers.activations import ACT2FN
-from transformers.modeling_utils import PreTrainedModel
-from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS, find_pruneable_heads_and_indices, prune_linear_layer
-from transformers.utils import (
-    DUMMY_INPUTS,
-    DUMMY_MASK,
-    add_start_docstrings,
-    add_start_docstrings_to_model_forward,
-    is_torch_fx_proxy,
-    logging,
-    replace_return_docstrings,
-)
-from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
 from galaxy.loralib.layers import  Linear as LoraLinear
 from galaxy.adapters.utils import Adapter
+ALL_LAYERNORM_LAYERS = [nn.LayerNorm]
+import math
+from collections import OrderedDict
+import torch
+from packaging import version
+from torch import Tensor, nn
 
 
-logger = logging.get_logger(__name__)
 
-_CONFIG_FOR_DOC = "T5Config"
-_CHECKPOINT_FOR_DOC = "google-t5/t5-small"
+class PytorchGELUTanh(nn.Module):
+    """
+    A fast C implementation of the tanh approximation of the GeLU activation function. See
+    https://arxiv.org/abs/1606.08415.
 
-####################################################
-# This dict contains ids and associated url
-# for the pretrained weights provided with the models
-####################################################
-T5_PRETRAINED_MODEL_ARCHIVE_LIST = [
-    "google-t5/t5-small",
-    "google-t5/t5-base",
-    "google-t5/t5-large",
-    "google-t5/t5-3b",
-    "google-t5/t5-11b",
-    # See all T5 models at https://huggingface.co/models?filter=t5
-]
+    This implementation is equivalent to NewGELU and FastGELU but much faster. However, it is not an exact numerical
+    match due to rounding errors.
+    """
 
+    def __init__(self):
+        super().__init__()
+        if version.parse(torch.__version__) < version.parse("1.12.0"):
+            raise ImportError(
+                f"You are using torch=={torch.__version__}, but torch>=1.12.0 is required to use "
+                "PytorchGELUTanh. Please upgrade torch."
+            )
 
-####################################################
-# This is a conversion method from TF 1.0 to PyTorch
-# More details: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28
-####################################################
-def load_tf_weights_in_t5(model, config, tf_checkpoint_path):
-    """Load tf checkpoints in a pytorch model."""
-    try:
-        import re
-
-        import numpy as np
-        import tensorflow as tf
-    except ImportError:
-        logger.error(
-            "Loading a TensorFlow model in PyTorch, requires TensorFlow to be installed. Please see "
-            "https://www.tensorflow.org/install/ for installation instructions."
-        )
-        raise
-    tf_path = os.path.abspath(tf_checkpoint_path)
-    logger.info(f"Converting TensorFlow checkpoint from {tf_path}")
-    # Load weights from TF model
-    init_vars = tf.train.list_variables(tf_path)
-    names = []
-    tf_weights = {}
-    for name, shape in init_vars:
-        logger.info(f"Loading TF weight {name} with shape {shape}")
-        array = tf.train.load_variable(tf_path, name)
-        names.append(name)
-        tf_weights[name] = array
-
-    for txt_name in names:
-        name = txt_name.split("/")
-        # adam_v and adam_m are variables used in AdamWeightDecayOptimizer to calculated m and v
-        # which are not required for using pretrained model
-        if any(
-            n in ["adam_v", "adam_m", "AdamWeightDecayOptimizer", "AdamWeightDecayOptimizer_1", "global_step"]
-            for n in name
-        ):
-            logger.info(f"Skipping {'/'.join(name)}")
-            tf_weights.pop(txt_name, None)
-            continue
-        if "_slot_" in name[-1]:
-            logger.info(f"Skipping {'/'.join(name)}")
-            tf_weights.pop(txt_name, None)
-            continue
-        pointer = model
-        array = tf_weights[txt_name]
-
-        for m_name in name:
-            if re.fullmatch(r"[A-Za-z]+_\d+", m_name):
-                scope_names = re.split(r"_(\d+)", m_name)
-            else:
-                scope_names = [m_name]
-            if scope_names[0] in ["kernel", "scale", "embedding"]:
-                pointer = getattr(pointer, "weight")
-            elif scope_names[0] == "self_attention":
-                pointer = getattr(pointer, "layer")
-                pointer = pointer[0]
-            elif scope_names[0] == "enc_dec_attention":
-                pointer = getattr(pointer, "layer")
-                pointer = pointer[1]
-            elif scope_names[0] == "dense_relu_dense":
-                pointer = getattr(pointer, "layer")
-                pointer = pointer[2]
-            elif scope_names[0] == "rms_norm":
-                if hasattr(pointer, "layer_norm"):
-                    pointer = getattr(pointer, "layer_norm")
-                elif hasattr(pointer, "final_layer_norm"):
-                    pointer = getattr(pointer, "final_layer_norm")
-            elif scope_names[0] == "scale":
-                pointer = getattr(pointer, "weight")
-            elif scope_names[0] == "output_bias" or scope_names[0] == "beta":
-                pointer = getattr(pointer, "bias")
-            elif scope_names[0] == "squad":
-                pointer = getattr(pointer, "classifier")
-            elif scope_names[0] == "decoder" and name[1] == "logits":
-                continue
-            elif scope_names[0] == "logits":
-                pointer = getattr(pointer, "lm_head")
-            elif scope_names[0] == "wi" and len(scope_names) > 1 and scope_names[1].isdigit():
-                pointer = getattr(pointer, f"wi_{scope_names[1]}")
-                continue
-            else:
-                try:
-                    pointer = getattr(pointer, scope_names[0])
-                except AttributeError:
-                    logger.info(f"Skipping {'/'.join(name)}")
-                    continue
-            if len(scope_names) >= 2:
-                num = int(scope_names[1])
-                pointer = pointer[num]
-        if scope_names[0] not in ["kernel", "scale", "embedding"]:
-            pointer = getattr(pointer, "weight")
-        if scope_names[0] != "embedding":
-            logger.info(f"Transposing numpy weight of shape {array.shape} for {name}")
-            array = np.transpose(array)
-        try:
-            if pointer.shape != array.shape:
-                raise ValueError(f"Pointer shape {pointer.shape} and array shape {array.shape} mismatched")
-        except AssertionError as e:
-            e.args += (pointer.shape, array.shape)
-            raise
-        logger.info(f"Initialize PyTorch weight {name}")
-        pointer.data = torch.from_numpy(array.astype(np.float32))
-        tf_weights.pop(txt_name, None)
-
-    logger.info(f"Weights not copied to PyTorch model: {', '.join(tf_weights.keys())}.")
-    return model
+    def forward(self, input: Tensor) -> Tensor:
+        return nn.functional.gelu(input, approximate="tanh")
 
 
-####################################################
-# PyTorch Models are constructed by sub-classing
-# - torch.nn.Module for the layers and
-# - PreTrainedModel for the models (it-self a sub-class of nn.Module)
-####################################################
-PARALLELIZE_DOCSTRING = r"""
-    This is an experimental feature and is a subject to change at a moment's notice.
+class NewGELUActivation(nn.Module):
+    """
+    Implementation of the GELU activation function currently in Google BERT repo (identical to OpenAI GPT). Also see
+    the Gaussian Error Linear Units paper: https://arxiv.org/abs/1606.08415
+    """
 
-    Uses a device map to distribute attention modules of the model across several devices. If no device map is given,
-    it will evenly distribute blocks across all devices.
+    def forward(self, input: Tensor) -> Tensor:
+        return 0.5 * input * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (input + 0.044715 * torch.pow(input, 3.0))))
 
-    Args:
-        device_map (`Dict[int, list]`, optional, defaults to None):
-            A dictionary that maps attention modules to devices. Note that the embedding module and LMHead are always
-            automatically mapped to the first device (for esoteric reasons). That means that the first device should
-            have fewer attention modules mapped to it than other devices. For reference, the t5 models have the
-            following number of attention modules:
 
-                - google-t5/t5-small: 6
-                - google-t5/t5-base: 12
-                - google-t5/t5-large: 24
-                - google-t5/t5-3b: 24
-                - google-t5/t5-11b: 24
+class GELUActivation(nn.Module):
+    """
+    Original Implementation of the GELU activation function in Google BERT repo when initially created. For
+    information: OpenAI GPT's GELU is slightly different (and gives slightly different results): 0.5 * x * (1 +
+    torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3)))) This is now written in C in nn.functional
+    Also see the Gaussian Error Linear Units paper: https://arxiv.org/abs/1606.08415
+    """
 
-    Example:
+    def __init__(self, use_gelu_python: bool = False):
+        super().__init__()
+        if use_gelu_python:
+            self.act = self._gelu_python
+        else:
+            self.act = nn.functional.gelu
 
-    ```python
-    # Here is an example of a device map on a machine with 4 GPUs using google-t5/t5-3b, which has a total of 24 attention modules:
-    model = T5ForConditionalGeneration.from_pretrained("google-t5/t5-3b")
-    device_map = {
-        0: [0, 1, 2],
-        1: [3, 4, 5, 6, 7, 8, 9],
-        2: [10, 11, 12, 13, 14, 15, 16],
-        3: [17, 18, 19, 20, 21, 22, 23],
-    }
-    model.parallelize(device_map)
-    ```
-"""
-DEPARALLELIZE_DOCSTRING = r"""
-    Moves the model to cpu from a model parallel state.
+    def _gelu_python(self, input: Tensor) -> Tensor:
+        return input * 0.5 * (1.0 + torch.erf(input / math.sqrt(2.0)))
 
-    Example:
+    def forward(self, input: Tensor) -> Tensor:
+        return self.act(input)
 
-    ```python
-    # On a 4 GPU machine with google-t5/t5-3b:
-    model = T5ForConditionalGeneration.from_pretrained("google-t5/t5-3b")
-    device_map = {
-        0: [0, 1, 2],
-        1: [3, 4, 5, 6, 7, 8, 9],
-        2: [10, 11, 12, 13, 14, 15, 16],
-        3: [17, 18, 19, 20, 21, 22, 23],
-    }
-    model.parallelize(device_map)  # Splits the model across several devices
-    model.deparallelize()  # Put the model back on cpu and cleans memory by calling torch.cuda.empty_cache()
-    ```
-"""
+
+class FastGELUActivation(nn.Module):
+    """
+    Applies GELU approximation that is slower than QuickGELU but more accurate. See: https://github.com/hendrycks/GELUs
+    """
+
+    def forward(self, input: Tensor) -> Tensor:
+        return 0.5 * input * (1.0 + torch.tanh(input * 0.7978845608 * (1.0 + 0.044715 * input * input)))
+
+
+class QuickGELUActivation(nn.Module):
+    """
+    Applies GELU approximation that is fast but somewhat inaccurate. See: https://github.com/hendrycks/GELUs
+    """
+
+    def forward(self, input: Tensor) -> Tensor:
+        return input * torch.sigmoid(1.702 * input)
+
+
+class ClippedGELUActivation(nn.Module):
+    """
+    Clip the range of possible GeLU outputs between [min, max]. This is especially useful for quantization purpose, as
+    it allows mapping negatives values in the GeLU spectrum. For more information on this trick, please refer to
+    https://arxiv.org/abs/2004.09602.
+
+    Gaussian Error Linear Unit. Original Implementation of the gelu activation function in Google Bert repo when
+    initially created.
+
+    For information: OpenAI GPT's gelu is slightly different (and gives slightly different results): 0.5 * x * (1 +
+    torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3)))). See https://arxiv.org/abs/1606.08415
+    """
+
+    def __init__(self, min: float, max: float):
+        if min > max:
+            raise ValueError(f"min should be < max (got min: {min}, max: {max})")
+
+        super().__init__()
+        self.min = min
+        self.max = max
+
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.clip(gelu(x), self.min, self.max)
+
+
+class AccurateGELUActivation(nn.Module):
+    """
+    Applies GELU approximation that is faster than default and more accurate than QuickGELU. See:
+    https://github.com/hendrycks/GELUs
+
+    Implemented along with MEGA (Moving Average Equipped Gated Attention)
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.precomputed_constant = math.sqrt(2 / math.pi)
+
+    def forward(self, input: Tensor) -> Tensor:
+        return 0.5 * input * (1 + torch.tanh(self.precomputed_constant * (input + 0.044715 * torch.pow(input, 3))))
+
+
+class SiLUActivation(nn.Module):
+    """
+    See Gaussian Error Linear Units (Hendrycks et al., https://arxiv.org/abs/1606.08415) where the SiLU (Sigmoid Linear
+    Unit) was originally introduced and coined, and see Sigmoid-Weighted Linear Units for Neural Network Function
+    Approximation in Reinforcement Learning (Elfwing et al., https://arxiv.org/abs/1702.03118) and Swish: a Self-Gated
+    Activation Function (Ramachandran et al., https://arxiv.org/abs/1710.05941v1) where the SiLU was experimented with
+    later.
+    """
+
+    def forward(self, input: Tensor) -> Tensor:
+        return nn.functional.silu(input)
+
+
+class MishActivation(nn.Module):
+    """
+    See Mish: A Self-Regularized Non-Monotonic Activation Function (Misra., https://arxiv.org/abs/1908.08681). Also
+    visit the official repository for the paper: https://github.com/digantamisra98/Mish
+    """
+
+    def __init__(self):
+        super().__init__()
+        if version.parse(torch.__version__) < version.parse("1.9.0"):
+            self.act = self._mish_python
+        else:
+            self.act = nn.functional.mish
+
+    def _mish_python(self, input: Tensor) -> Tensor:
+        return input * torch.tanh(nn.functional.softplus(input))
+
+    def forward(self, input: Tensor) -> Tensor:
+        return self.act(input)
+
+
+class LinearActivation(nn.Module):
+    """
+    Applies the linear activation function, i.e. forwarding input directly to output.
+    """
+
+    def forward(self, input: Tensor) -> Tensor:
+        return input
+
+
+class LaplaceActivation(nn.Module):
+    """
+    Applies elementwise activation based on Laplace function, introduced in MEGA as an attention activation. See
+    https://arxiv.org/abs/2209.10655
+
+    Inspired by squared relu, but with bounded range and gradient for better stability
+    """
+
+    def forward(self, input, mu=0.707107, sigma=0.282095):
+        input = (input - mu).div(sigma * math.sqrt(2.0))
+        return 0.5 * (1.0 + torch.erf(input))
+
+
+class ReLUSquaredActivation(nn.Module):
+    """
+    Applies the relu^2 activation introduced in https://arxiv.org/abs/2109.08668v2
+    """
+
+    def forward(self, input):
+        relu_applied = nn.functional.relu(input)
+        squared = torch.square(relu_applied)
+        return squared
+
+
+class ClassInstantier(OrderedDict):
+    def __getitem__(self, key):
+        content = super().__getitem__(key)
+        cls, kwargs = content if isinstance(content, tuple) else (content, {})
+        return cls(**kwargs)
+
+
+ACT2CLS = {
+    "gelu": GELUActivation,
+    "gelu_10": (ClippedGELUActivation, {"min": -10, "max": 10}),
+    "gelu_fast": FastGELUActivation,
+    "gelu_new": NewGELUActivation,
+    "gelu_python": (GELUActivation, {"use_gelu_python": True}),
+    "gelu_pytorch_tanh": PytorchGELUTanh,
+    "gelu_accurate": AccurateGELUActivation,
+    "laplace": LaplaceActivation,
+    "linear": LinearActivation,
+    "mish": MishActivation,
+    "quick_gelu": QuickGELUActivation,
+    "relu": nn.ReLU,
+    "relu2": ReLUSquaredActivation,
+    "relu6": nn.ReLU6,
+    "sigmoid": nn.Sigmoid,
+    "silu": SiLUActivation,
+    "swish": SiLUActivation,
+    "tanh": nn.Tanh,
+}
+ACT2FN = ClassInstantier(ACT2CLS)
+
+
+def get_activation(activation_string):
+    if activation_string in ACT2FN:
+        return ACT2FN[activation_string]
+    else:
+        raise KeyError(f"function {activation_string} not found in ACT2FN mapping {list(ACT2FN.keys())}")
+
+
+# For backwards compatibility with: from activations import gelu_python
+gelu_python = get_activation("gelu_python")
+gelu_new = get_activation("gelu_new")
+gelu = get_activation("gelu")
+gelu_fast = get_activation("gelu_fast")
+quick_gelu = get_activation("quick_gelu")
+silu = get_activation("silu")
+mish = get_activation("mish")
+linear_act = get_activation("linear")
+
 
 
 class T5LayerNorm(nn.Module):
@@ -250,18 +285,6 @@ class T5LayerNorm(nn.Module):
         return self.weight * hidden_states
 
 
-try:
-    from apex.normalization import FusedRMSNorm
-
-    T5LayerNorm = FusedRMSNorm  # noqa
-
-    logger.info("Discovered apex.normalization.FusedRMSNorm - will use it instead of T5LayerNorm")
-except ImportError:
-    # using the normal T5LayerNorm
-    pass
-except Exception:
-    logger.warning("discovered apex but it failed to load, falling back to T5LayerNorm")
-    pass
 
 ALL_LAYERNORM_LAYERS.append(T5LayerNorm)
 
@@ -382,21 +405,21 @@ class T5Attention(nn.Module):
         self.pruned_heads = set()
         self.gradient_checkpointing = False
 
-    def prune_heads(self, heads):
-        if len(heads) == 0:
-            return
-        heads, index = find_pruneable_heads_and_indices(
-            heads, self.n_heads, self.key_value_proj_dim, self.pruned_heads
-        )
-        # Prune linear layers
-        self.q = prune_linear_layer(self.q, index)
-        self.k = prune_linear_layer(self.k, index)
-        self.v = prune_linear_layer(self.v, index)
-        self.o = prune_linear_layer(self.o, index, dim=1)
-        # Update hyper params
-        self.n_heads = self.n_heads - len(heads)
-        self.inner_dim = self.key_value_proj_dim * self.n_heads
-        self.pruned_heads = self.pruned_heads.union(heads)
+    # def prune_heads(self, heads):
+    #     if len(heads) == 0:
+    #         return
+    #     heads, index = find_pruneable_heads_and_indices(
+    #         heads, self.n_heads, self.key_value_proj_dim, self.pruned_heads
+    #     )
+    #     # Prune linear layers
+    #     self.q = prune_linear_layer(self.q, index)
+    #     self.k = prune_linear_layer(self.k, index)
+    #     self.v = prune_linear_layer(self.v, index)
+    #     self.o = prune_linear_layer(self.o, index, dim=1)
+    #     # Update hyper params
+    #     self.n_heads = self.n_heads - len(heads)
+    #     self.inner_dim = self.key_value_proj_dim * self.n_heads
+    #     self.pruned_heads = self.pruned_heads.union(heads)
 
     @staticmethod
     def _relative_position_bucket(relative_position, bidirectional=True, num_buckets=32, max_distance=128):
@@ -808,133 +831,67 @@ class T5ClassificationHead(nn.Module):
         return hidden_states
 
 
-class T5PreTrainedModel(PreTrainedModel):
+
+def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None):
     """
-    An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
-    models.
+    Expands attention_mask from `[bsz, seq_len]` to `[bsz, 1, tgt_seq_len, src_seq_len]`.
     """
+    bsz, src_len = mask.size()
+    tgt_len = tgt_len if tgt_len is not None else src_len
 
-    # config_class = T5Config
-    load_tf_weights = load_tf_weights_in_t5
-    base_model_prefix = "transformer"
-    is_parallelizable = True
-    supports_gradient_checkpointing = True
-    _no_split_modules = ["T5Block"]
-    _keep_in_fp32_modules = ["wo"]
+    expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
 
-    @property
-    def dummy_inputs(self):
-        input_ids = torch.tensor(DUMMY_INPUTS)
-        input_mask = torch.tensor(DUMMY_MASK)
-        dummy_inputs = {
-            "decoder_input_ids": input_ids,
-            "input_ids": input_ids,
-            "decoder_attention_mask": input_mask,
-        }
-        return dummy_inputs
+    inverted_mask = 1.0 - expanded_mask
 
-    def _init_weights(self, module):
-        """Initialize the weights"""
-        factor = self.config.initializer_factor  # Used for testing weights initialization
-        if isinstance(module, T5LayerNorm):
-            module.weight.data.fill_(factor * 1.0)
-        elif isinstance(
-            module,
-            (T5Model, T5ForConditionalGeneration, T5EncoderModel, T5ForQuestionAnswering),
-        ):
-            # Mesh TensorFlow embeddings initialization
-            # See https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/layers.py#L1624
-            module.shared.weight.data.normal_(mean=0.0, std=factor * 1.0)
-            if hasattr(module, "lm_head") and not self.config.tie_word_embeddings:
-                module.lm_head.weight.data.normal_(mean=0.0, std=factor * 1.0)
-            if hasattr(module, "qa_outputs"):
-                module.qa_outputs.weight.data.normal_(mean=0.0, std=factor * ((self.config.d_model) ** -0.5))
-                module.qa_outputs.bias.data.zero_()
-        elif isinstance(module, T5ForTokenClassification):
-            if hasattr(module, "classifier"):
-                module.classifier.weight.data.normal_(mean=0.0, std=factor * 1.0)
-                module.classifier.bias.data.zero_()
-        elif isinstance(module, T5ClassificationHead):
-            module.dense.weight.data.normal_(mean=0.0, std=factor * ((self.config.d_model) ** -0.5))
-            if hasattr(module.dense, "bias") and module.dense.bias is not None:
-                module.dense.bias.data.zero_()
-            module.out_proj.weight.data.normal_(mean=0.0, std=factor * ((self.config.d_model) ** -0.5))
-            if hasattr(module.out_proj, "bias") and module.out_proj.bias is not None:
-                module.out_proj.bias.data.zero_()
-        elif isinstance(module, T5DenseActDense):
-            # Mesh TensorFlow FF initialization
-            # See https://github.com/tensorflow/mesh/blob/master/mesh_tensorflow/transformer/transformer_layers.py#L56
-            # and https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/layers.py#L89
-            module.wi.weight.data.normal_(mean=0.0, std=factor * ((self.config.d_model) ** -0.5))
-            if hasattr(module.wi, "bias") and module.wi.bias is not None:
-                module.wi.bias.data.zero_()
-            module.wo.weight.data.normal_(mean=0.0, std=factor * ((self.config.d_ff) ** -0.5))
-            if hasattr(module.wo, "bias") and module.wo.bias is not None:
-                module.wo.bias.data.zero_()
-        elif isinstance(module, T5DenseGatedActDense):
-            module.wi_0.weight.data.normal_(mean=0.0, std=factor * ((self.config.d_model) ** -0.5))
-            if hasattr(module.wi_0, "bias") and module.wi_0.bias is not None:
-                module.wi_0.bias.data.zero_()
-            module.wi_1.weight.data.normal_(mean=0.0, std=factor * ((self.config.d_model) ** -0.5))
-            if hasattr(module.wi_1, "bias") and module.wi_1.bias is not None:
-                module.wi_1.bias.data.zero_()
-            module.wo.weight.data.normal_(mean=0.0, std=factor * ((self.config.d_ff) ** -0.5))
-            if hasattr(module.wo, "bias") and module.wo.bias is not None:
-                module.wo.bias.data.zero_()
-        elif isinstance(module, T5Attention):
-            # Mesh TensorFlow attention initialization to avoid scaling before softmax
-            # See https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/transformer/attention.py#L136
-            d_model = self.config.d_model
-            key_value_proj_dim = self.config.d_kv
-            n_heads = self.config.num_heads
-            module.q.weight.data.normal_(mean=0.0, std=factor * ((d_model * key_value_proj_dim) ** -0.5))
-            module.k.weight.data.normal_(mean=0.0, std=factor * (d_model**-0.5))
-            module.v.weight.data.normal_(mean=0.0, std=factor * (d_model**-0.5))
-            module.o.weight.data.normal_(mean=0.0, std=factor * ((n_heads * key_value_proj_dim) ** -0.5))
-            if module.has_relative_attention_bias:
-                module.relative_attention_bias.weight.data.normal_(mean=0.0, std=factor * ((d_model) ** -0.5))
-
-    def _shift_right(self, input_ids):
-        decoder_start_token_id =   self.config.decoder_start_token_id
-        pad_token_id = self.config.pad_token_id
-
-        if decoder_start_token_id is None:
-            raise ValueError(
-                "self.model.config.decoder_start_token_id has to be defined. In T5 it is usually set to the pad_token_id. "
-                "See T5 docs for more information."
-            )
-
-        # shift inputs to the right
-        if is_torch_fx_proxy(input_ids):
-            # Item assignment is not supported natively for proxies.
-            shifted_input_ids = torch.full(input_ids.shape[:-1] + (1,), decoder_start_token_id)
-            shifted_input_ids = torch.cat([shifted_input_ids, input_ids[..., :-1]], dim=-1)
-        else:
-            shifted_input_ids = input_ids.new_zeros(input_ids.shape)
-            shifted_input_ids[..., 1:] = input_ids[..., :-1].clone()
-            shifted_input_ids[..., 0] = decoder_start_token_id
-
-        if pad_token_id is None:
-            raise ValueError("self.model.config.pad_token_id has to be defined.")
-        # replace possible -100 values in labels by `pad_token_id`
-        shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
-
-        return shifted_input_ids
+    return inverted_mask.masked_fill(inverted_mask.to(torch.bool), torch.finfo(dtype).min)
 
 
-class T5Stack(T5PreTrainedModel):
+
+class T5Stack( nn.Module):
     def __init__(self, config, embed_tokens=None):
-        super().__init__(config)
-
+        super().__init__( )
+        self.config= config
+        self.dtype = torch.float32
         self.embed_tokens = embed_tokens
         self.is_decoder = config.is_decoder
-
+        ##############################################
         self.block = nn.ModuleList(
             [T5Block(config, has_relative_attention_bias=bool(i == 0)) for i in range(config.num_layers)]
         )
         self.final_layer_norm = T5LayerNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.dropout = nn.Dropout(config.dropout_rate)
+    def _convert_head_mask_to_5d(self, head_mask, num_hidden_layers):
+        """-> [num_hidden_layers x batch x num_heads x seq_length x seq_length]"""
+        if head_mask.dim() == 1:
+            head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)  # We can specify head_mask for each layer
+        assert head_mask.dim() == 5, f"head_mask.dim != 5, instead {head_mask.dim()}"
+        head_mask = head_mask.to(dtype=self.dtype)  # switch to float if need + fp16 compatibility
+        return head_mask
+    
+    def invert_attention_mask(self, encoder_attention_mask: Tensor) -> Tensor:
+        if encoder_attention_mask.dim() == 3:
+            encoder_extended_attention_mask = encoder_attention_mask[:, None, :, :]
+        if encoder_attention_mask.dim() == 2:
+            encoder_extended_attention_mask = encoder_attention_mask[:, None, None, :]
+        encoder_extended_attention_mask = encoder_extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
+        encoder_extended_attention_mask = (1.0 - encoder_extended_attention_mask) * torch.finfo(self.dtype).min
 
+        return encoder_extended_attention_mask
+
+    def get_head_mask(
+        self, head_mask: Optional[Tensor], num_hidden_layers: int, is_attention_chunked: bool = False
+    ) -> Tensor:
+        if head_mask is not None:
+            head_mask = self._convert_head_mask_to_5d(head_mask, num_hidden_layers)
+            if is_attention_chunked is True:
+                head_mask = head_mask.unsqueeze(-1)
+        else:
+            head_mask = [None] * num_hidden_layers
+
+        return head_mask
     def forward(
         self,
         input_ids=None,
@@ -968,7 +925,11 @@ class T5Stack(T5PreTrainedModel):
         mask_seq_length =  seq_length
         past_key_values = [None] * len(self.block)
         attention_mask = torch.ones(batch_size, mask_seq_length, device=inputs_embeds.device)
-        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+        # extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+        # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+        extended_attention_mask = _expand_mask(attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]).to(
+                self.config.device
+            )
         if self.is_decoder and encoder_hidden_states is not None:
             encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
             encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
@@ -1006,22 +967,23 @@ class T5Stack(T5PreTrainedModel):
         hidden_states = self.dropout(hidden_states)
         return hidden_states
 
-class T5Model(T5PreTrainedModel):
+class T5Model(nn.Module):
     _keys_to_ignore_on_load_unexpected = [
         "decoder.block.0.layer.1.EncDecAttention.relative_attention_bias.weight",
     ]
     _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
 
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__( )
         self.shared = nn.Embedding(config.vocab_size, config.d_model)
-
+        self.config = config
+        ##################################################
         encoder_config = copy.deepcopy(config)
         encoder_config.is_decoder = False
         encoder_config.use_cache = False
         encoder_config.is_encoder_decoder = False
         self.encoder = T5Stack(encoder_config, self.shared)
-
+        ###################################################
         decoder_config = copy.deepcopy(config)
         decoder_config.is_decoder = True
         encoder_config.use_cache = False

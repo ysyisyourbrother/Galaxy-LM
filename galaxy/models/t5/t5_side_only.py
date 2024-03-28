@@ -2,12 +2,14 @@ import torch
 import torch.nn as nn
 import math
 import copy
-from galaxy.models.t5.t5_model import  T5Block,T5PreTrainedModel,T5LayerNorm
+from galaxy.models.t5.t5_model import  T5Block,T5LayerNorm,_expand_mask
 from typing import List, Optional, Tuple, Union
-class T5SideOnlyStack(T5PreTrainedModel):
+from torch import Tensor
+class T5SideOnlyStack( nn.Module):
     def __init__(self, config, embed_tokens=None):
-        super().__init__(config)
+        super().__init__( )
         self.config = config
+        self.dtype = torch.float32
         # self.embed_tokens = embed_tokens
         self.is_decoder = config.is_decoder
         #######################################
@@ -27,7 +29,37 @@ class T5SideOnlyStack(T5PreTrainedModel):
         self.side_first_downsample = nn.Linear(config.d_model, side_config.d_model,  bias=config.add_bias_sampling)
         self.side_downsamples = nn.ModuleList( [ copy.deepcopy(self.side_first_downsample)  for  _ in range(config.num_layers)] )
         self.final_side_layer_norm = T5LayerNorm(side_config.d_model, eps=side_config.layer_norm_epsilon)
+    def _convert_head_mask_to_5d(self, head_mask, num_hidden_layers):
+        """-> [num_hidden_layers x batch x num_heads x seq_length x seq_length]"""
+        if head_mask.dim() == 1:
+            head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)  # We can specify head_mask for each layer
+        assert head_mask.dim() == 5, f"head_mask.dim != 5, instead {head_mask.dim()}"
+        head_mask = head_mask.to(dtype=self.dtype)  # switch to float if need + fp16 compatibility
+        return head_mask
+    
+    def invert_attention_mask(self, encoder_attention_mask: Tensor) -> Tensor:
+        if encoder_attention_mask.dim() == 3:
+            encoder_extended_attention_mask = encoder_attention_mask[:, None, :, :]
+        if encoder_attention_mask.dim() == 2:
+            encoder_extended_attention_mask = encoder_attention_mask[:, None, None, :]
+        encoder_extended_attention_mask = encoder_extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
+        encoder_extended_attention_mask = (1.0 - encoder_extended_attention_mask) * torch.finfo(self.dtype).min
 
+        return encoder_extended_attention_mask
+    def get_head_mask(
+        self, head_mask: Optional[Tensor], num_hidden_layers: int, is_attention_chunked: bool = False
+    ) -> Tensor:
+        if head_mask is not None:
+            head_mask = self._convert_head_mask_to_5d(head_mask, num_hidden_layers)
+            if is_attention_chunked is True:
+                head_mask = head_mask.unsqueeze(-1)
+        else:
+            head_mask = [None] * num_hidden_layers
+
+        return head_mask
     def forward(
         self,
         input_ids=None,
@@ -79,7 +111,10 @@ class T5SideOnlyStack(T5PreTrainedModel):
         mask_seq_length =  seq_length
         past_key_values = [None] * len(self.side_block)
         attention_mask = torch.ones(batch_size, mask_seq_length, device= self.config.device)
-        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+        # extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+        extended_attention_mask = _expand_mask(attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]).to(
+                self.config.device
+            )
         if self.is_decoder and encoder_hidden_states is not None:
             encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
             encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
@@ -147,16 +182,16 @@ class T5SideOnlyStack(T5PreTrainedModel):
         side_hidden_states = self.dropout(side_hidden_states)
         return  side_hidden_states
     
-class T5SideOnly(T5PreTrainedModel):
+class T5SideOnly(nn.Module):
     _keys_to_ignore_on_load_unexpected = [
         "decoder.block.0.layer.1.EncDecAttention.relative_attention_bias.weight",
     ]
     _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
 
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__( )
         # self.shared = nn.Embedding(config.vocab_size, config.d_model)
-
+        self.config = config
         encoder_config = copy.deepcopy(config)
         encoder_config.is_decoder = False
         encoder_config.use_cache = False
@@ -205,46 +240,4 @@ class T5SideOnly(T5PreTrainedModel):
         sequence_output = sequence_output + decoder_outputs
         return decoder_outputs  
 
-class T5SideOnlyPP(T5PreTrainedModel):
-    _keys_to_ignore_on_load_unexpected = [
-        "decoder.block.0.layer.1.EncDecAttention.relative_attention_bias.weight",
-    ]
-    _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
 
-    def __init__(self, config):
-        super().__init__(config)
-        self.config = config
-        self.shared = nn.Embedding(config.vocab_size, config.d_model)
-        if config.is_encoder:
-            encoder_config = copy.deepcopy(config)
-            encoder_config.is_decoder = False
-            encoder_config.use_cache = False
-            encoder_config.num_layers = config.num_pp_encoder_layers
-            encoder_config.is_encoder_decoder = False
-            if config.is_encoder_first:
-                self.encoder = T5SideOnlyStack(encoder_config, self.shared)
-            else:
-                self.encoder = T5SideOnlyStack(encoder_config, None)
-        if config.is_decoder:
-            decoder_config = copy.deepcopy(config)
-            decoder_config.is_decoder = True
-            decoder_config.use_cache = False
-            decoder_config.is_encoder_decoder = False
-            decoder_config.num_layers = config.num_pp_decoder_layers
-            if config.is_decoder_first:
-                self.decoder = T5SideOnlyStack(decoder_config, self.shared)
-            else:
-                self.decoder = T5SideOnlyStack(decoder_config, None)
-        def forward(
-            self,
-            input_ids: Optional[torch.LongTensor] = None,
-            decoder_input_ids: Optional[torch.LongTensor] = None,
-            head_mask: Optional[torch.FloatTensor] = None,
-            decoder_head_mask: Optional[torch.FloatTensor] = None,
-            encoder_outputs: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
-            inputs_embeds: Optional[torch.Tensor] = None,
-            decoder_inputs_embeds: Optional[torch.Tensor] = None,
-        ):
-            if self.config.is_encoder:
-                if self.config.is_encoder_first:
-                    

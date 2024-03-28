@@ -8,59 +8,55 @@ import warnings
 from typing import List, Optional, Tuple, Union
 
 import torch
-from torch import nn
-from transformers.activations import ACT2FN
-from transformers.modeling_utils import PreTrainedModel
-from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS, find_pruneable_heads_and_indices, prune_linear_layer
-from transformers.utils import (
-    DUMMY_INPUTS,
-    DUMMY_MASK,
-    add_start_docstrings,
-    add_start_docstrings_to_model_forward,
-    is_torch_fx_proxy,
-    logging,
-    replace_return_docstrings,
-)
-from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
+from torch import nn,Tensor
 from galaxy.adapters.utils import modify_model_for_peft
+from galaxy.models.t5.t5_model import T5Block,T5LayerNorm,_expand_mask
 
 
-
-logger = logging.get_logger(__name__)
-
-_CONFIG_FOR_DOC = "T5Config"
-_CHECKPOINT_FOR_DOC = "google-t5/t5-small"
-
-####################################################
-# This dict contains ids and associated url
-# for the pretrained weights provided with the models
-####################################################
-T5_PRETRAINED_MODEL_ARCHIVE_LIST = [
-    "google-t5/t5-small",
-    "google-t5/t5-base",
-    "google-t5/t5-large",
-    "google-t5/t5-3b",
-    "google-t5/t5-11b",
-    # See all T5 models at https://huggingface.co/models?filter=t5
-]
-from galaxy.models.t5.t5_model import T5PreTrainedModel
-from galaxy.models.t5.t5_model import T5Block,T5LayerNorm
-
-
-class T5Stack(T5PreTrainedModel):
+class T5Stack(  nn.Module):
     def __init__(self, config, embed_tokens=None):
-        super().__init__(config)
+        super().__init__( )
         self.config=config
         self.embed_tokens = embed_tokens
         self.is_decoder = config.is_decoder
-
+        self.dtype = torch.float32
+        ####################################################
         self.block = nn.ModuleList(
             [T5Block(config, has_relative_attention_bias=bool(i == 0)) for i in range(config.num_layers)]
         )
         if config.is_encoder_last or config.is_decoder_last:
             self.final_layer_norm = T5LayerNorm(config.d_model, eps=config.layer_norm_epsilon)
         self.dropout = nn.Dropout(config.dropout_rate)
+    def _convert_head_mask_to_5d(self, head_mask, num_hidden_layers):
+        """-> [num_hidden_layers x batch x num_heads x seq_length x seq_length]"""
+        if head_mask.dim() == 1:
+            head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)  # We can specify head_mask for each layer
+        assert head_mask.dim() == 5, f"head_mask.dim != 5, instead {head_mask.dim()}"
+        head_mask = head_mask.to(dtype=self.dtype)  # switch to float if need + fp16 compatibility
+        return head_mask
+    def invert_attention_mask(self, encoder_attention_mask: Tensor) -> Tensor:
+        if encoder_attention_mask.dim() == 3:
+            encoder_extended_attention_mask = encoder_attention_mask[:, None, :, :]
+        if encoder_attention_mask.dim() == 2:
+            encoder_extended_attention_mask = encoder_attention_mask[:, None, None, :]
+        encoder_extended_attention_mask = encoder_extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
+        encoder_extended_attention_mask = (1.0 - encoder_extended_attention_mask) * torch.finfo(self.dtype).min
 
+        return encoder_extended_attention_mask
+    def get_head_mask(
+        self, head_mask: Optional[Tensor], num_hidden_layers: int, is_attention_chunked: bool = False
+    ) -> Tensor:
+        if head_mask is not None:
+            head_mask = self._convert_head_mask_to_5d(head_mask, num_hidden_layers)
+            if is_attention_chunked is True:
+                head_mask = head_mask.unsqueeze(-1)
+        else:
+            head_mask = [None] * num_hidden_layers
+
+        return head_mask
     def forward(
         self,
         input_ids=None,
@@ -94,7 +90,11 @@ class T5Stack(T5PreTrainedModel):
         mask_seq_length =  seq_length
         past_key_values = [None] * len(self.block)
         attention_mask = torch.ones(batch_size, mask_seq_length, device=inputs_embeds.device)
-        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+        # extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+        
+        extended_attention_mask = _expand_mask(attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]).to(
+                self.config.device
+            )
         if self.is_decoder and encoder_hidden_states is not None:
             encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
             encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
@@ -139,16 +139,17 @@ class T5Stack(T5PreTrainedModel):
 
 
 
-class T5PPModel(T5PreTrainedModel):
+class T5PPModel(nn.Module):
     _keys_to_ignore_on_load_unexpected = [
         "decoder.block.0.layer.1.EncDecAttention.relative_attention_bias.weight",
     ]
     _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
 
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__( )
         self.config = config
         self.shared = nn.Embedding(config.vocab_size, config.d_model)
+        ###############################################################
         if config.is_encoder:
             encoder_config = copy.deepcopy(config)
             encoder_config.is_decoder = False
@@ -159,6 +160,7 @@ class T5PPModel(T5PreTrainedModel):
                 self.encoder = T5Stack(encoder_config, self.shared)
             else:
                 self.encoder = T5Stack(encoder_config, None)
+        ###############################################################
         if config.is_decoder:
             decoder_config = copy.deepcopy(config)
             decoder_config.is_decoder = True
