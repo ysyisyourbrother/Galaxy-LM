@@ -25,12 +25,17 @@ class PipelineRuntime():
         self.num_backward_micro_batch = 0
 
         self.training_iteration = 0     # 统计一共执行了多少次sync-round
-
+        self.forward_time_total = 0.0
+        self.backward_time_total = 0.0
+        self.record = False
     def parameters(self):
         parameter_iterators = []
         parameter_iterators.append(self.model.parameters())
         return itertools.chain(*parameter_iterators)
-
+    def set_record(self):
+        self.record = True
+        self.forward_time_total = 0.0
+        self.backward_time_total= 0.0
     def send_tensors_forward(self):
         # 如果是最后一个stage，返回
         if self.stage == self.total_stage-1:
@@ -97,18 +102,33 @@ class PipelineRuntime():
         fw_input, fw_input_side = self.receive_tensors_forward(input_sample)
         # 最后一个stage，执行loss function
         if self.stage == self.total_stage - 1:
+            torch.cuda.synchronize()
+            forward_start = time.time()
+            #####################################################################
             output = self.model(fw_input,fw_input_side)
             # TODO: 怎么把label传送到最后一个stage
             labels = torch.ones(output.shape[0]).cuda().long()
             loss = self.loss_func(output, labels)
             self.tensors[-1]["loss"] = loss 
+            #####################################################################
+            torch.cuda.synchronize()
+            forward_end = time.time()
+            self.forward_time_total += (forward_end - forward_start)
+
 
         # 不是最后一个stage，正常执行前向传播, 得到output 和 side_outputs
         else:
             # 第一个stage实际上只需要fw_input,这里统一stage model forward的输入
+            torch.cuda.synchronize()
+            forward_start = time.time()
+            ##############################################################
             output,side_outputs = self.model(fw_input,fw_input_side) # outputs 和 side_outputs
             self.tensors[-1]["fw_out"] = output
             self.tensors[-1]["fw_out_side"] = side_outputs
+            ##############################################################
+            torch.cuda.synchronize()
+            forward_end = time.time()
+            self.forward_time_total += (forward_end - forward_start)
             self.send_tensors_forward() 
         print(f"finish forward of microbatch {self.num_forward_micro_batch}")
 
@@ -146,11 +166,18 @@ class PipelineRuntime():
         if self.stage != 0:
             input_tensor_side.requires_grad_()
             input_tensor_side.register_hook(hook_wrapper())
-
+        torch.cuda.synchronize()
+        backward_start = time.time()
+        ###################################################################
         if self.stage == self.total_stage - 1:
             torch.autograd.backward(tuple([output_tensor]), grad_tensors=None)
         else:
             torch.autograd.backward(tuple([output_tensor]), grad_tensors=tuple([output_gradient]))
+        #####################################################################
+        torch.cuda.synchronize()
+        backward_end= time.time()
+        self.backward_time_total += (backward_end - backward_start)
+        
         # 发送梯度到上一个stage
         self.send_tensors_backward(input_gradient)
         print(f"finish backward of microbatch {self.num_backward_micro_batch}")
@@ -176,3 +203,6 @@ class PipelineRuntime():
         self.optimizer.step()
         self.training_iteration += 1
         print(f"Finish {self.training_iteration}-th iteration!")
+    def run_iteration(self,num_iteration):
+        for i in range(num_iteration):
+            self.forward_backward_pipelining()

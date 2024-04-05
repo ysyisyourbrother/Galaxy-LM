@@ -36,7 +36,10 @@ if __name__ == '__main__':
     print("Time usage:", time_dif)
 
     # Prepare Model
+    mem_before = torch.cuda.memory_allocated()
     model = Model(config).to(config.device)
+    mem_after = torch.cuda.memory_allocated()
+    print("Model memory usage: {} ( {} MB ) ".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024) ))
     # print(model)
     # Train
     if config.train:
@@ -46,45 +49,41 @@ if __name__ == '__main__':
         model.eval()
         print("Start inferencing")
     # 循环训练
+    # Prepare DDP Model 因为每台机器只有一块GPU，所以设备ID始终是0。
+    model = DDP(model, device_ids=None,find_unused_parameters=True)
+    # model = DDP(model, device_ids=None )
+    # TODO: 使用更合适的优化器
+    optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
+
+    warm_up_iter = 5
+    print("warn up for {} iterations".format(warm_up_iter))
+    for i in range(warm_up_iter):
+        trains, labels = next(train_iter)   
+        outputs = model(trains)
+        loss = F.cross_entropy(outputs, labels)
+        model.zero_grad()
+        loss.backward()
+        optimizer.step()
+    print("warm up finish...")
+
     forward_time_total = 0.0
     backward_time_total = 0.0
     allreduce_time_total = 0.0
-    # Prepare DDP Model 因为每台机器只有一块GPU，所以设备ID始终是0。
-    ddp_model = DDP(model, device_ids=None,find_unused_parameters=True)
-    # TODO: 使用更合适的优化器
-    optimizer = torch.optim.SGD(ddp_model.parameters(), lr=config.learning_rate)
+    run_iter= 10
+    
+    torch.cuda.synchronize()
+    global_start = time.time()
+    print("run for  {} iterations".format(run_iter))
+    for i in range(run_iter):
+        #############################################
+        trains, labels = next(train_iter)   
+        outputs = model(trains)
+        loss = F.cross_entropy(outputs, labels)
+        model.zero_grad()
+        loss.backward()
+        optimizer.step()
+    torch.cuda.synchronize()
+    global_end = time.time()
+    print("global elapse time: {} s for {} iterations".format( global_end - global_start , run_iter))
 
-    for i in range(config.num_epochs):
-        print("epoch: ",i)
-        for i, (trains, labels) in enumerate(train_iter):
-            ###############################################
-            # Forward 
-            torch.cuda.synchronize()
-            start = time.time()
-            outputs = ddp_model(trains)
-            loss = F.cross_entropy(outputs, labels)
-            torch.cuda.synchronize()
-            end = time.time()
-            forward_time_total += (end - start)
-            ################################################
-            # Backward
-            torch.cuda.synchronize()
-            start = time.time()
-            ddp_model.zero_grad()
-            loss.backward()
-            torch.cuda.synchronize()
-            end = time.time()
-            backward_time_total += (end - start)
-            ##########################################
-            torch.cuda.synchronize()
-            start = time.time()
-            optimizer.step()
-            torch.cuda.synchronize()
-            end = time.time()
-            allreduce_time_total += (end - start)
-    # clean_up()
-    print("Finish...")
-    print("Forward time: {} s".format(forward_time_total))
-    print("Backward time: {} s".format(backward_time_total))
-    print("Allreduce time: {} s".format(allreduce_time_total))
     get_max_memory(config)

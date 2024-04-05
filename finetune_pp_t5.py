@@ -40,7 +40,7 @@ if __name__ == '__main__':
         model = StageModel(config).to(config.device)
     mem_after = torch.cuda.memory_allocated()
     print("Model memory usage: {} ( {} MB ) ".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024) ))
-    print(model)
+    # print(model)
     if config.train:
         model.train()
         print('number of base_model parameters:', get_parameter_number(model.base_model))
@@ -50,6 +50,7 @@ if __name__ == '__main__':
     else:
         model.eval()
         print("Start inferencing")
+    print(get_parameter_number(model))
     runtime = PipelineRuntime(config, 
                               model, 
                               loss_func=F.cross_entropy, 
@@ -58,12 +59,24 @@ if __name__ == '__main__':
                               lr=0.01, 
                               if_cuda=True)
     
-    start_time = time.time()
+ 
     #TODO: train_iter 会用完
-    for i in range(config.num_iterations):
-        runtime.forward_backward_pipelining()
-    print("Finish...")
-    time_usage = get_time_dif(start_time)
-    print(time_usage)
-    print(f"{time_usage.seconds} (seconds)")
-    get_max_memory(config)
+    warm_up_iter = 5
+    runtime.set_record()
+    print("warn up for {} iterations".format(warm_up_iter))
+    runtime.run_iteration(warm_up_iter)
+
+    run_iter=  10
+    runtime.set_record()
+    torch.cuda.synchronize()
+    global_start = time.time()
+    print("run for  {} iterations".format(run_iter))
+    runtime.run_iteration(run_iter)
+    torch.cuda.synchronize()
+    global_end = time.time()
+
+    print("Stage {} Finish...".format(config.stage))
+    print( "forward time: {} s for {} iterations".format( runtime.forward_time_total, run_iter ))
+    print("backward time: {} s for {} iterations".format( runtime.backward_time_total , run_iter))
+    print("global elapse time: {} s for {} iterations".format( global_end - global_start , run_iter))
+    get_max_memory(config)  

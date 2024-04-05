@@ -6,7 +6,7 @@
     "train": true,
     "device": "cuda",
     "num_epochs": 1,
-    "batch_size": 16,
+    "batch_size": 4,
     "pad_size": 128,
     "learning_rate": 5e-5,
     "class_list_path": "dataset/THUCNews/data/class.txt",

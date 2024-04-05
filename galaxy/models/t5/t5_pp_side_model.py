@@ -124,8 +124,11 @@ class T5SidePPStack( nn.Module):
             side_hidden_states = self.side_first_downsample(hidden_states)
         else:
             hidden_states = inputs_embeds
-            side_hidden_states = side_inputs_embeds
+            side_hidden_states = side_inputs_embeds 
         # 经过N layer
+
+
+        
         for i, (layer_module, _) in enumerate(zip(self.block, past_key_values)):
             layer_head_mask = head_mask[i]
             cross_attn_layer_head_mask = cross_attn_head_mask[i]
@@ -182,6 +185,7 @@ class T5SidePPModel(nn.Module):
             encoder_config.is_decoder = False
             encoder_config.use_cache = False
             encoder_config.is_encoder_decoder = False
+            encoder_config.num_layers = config.num_pp_encoder_layers
             if config.is_encoder_first:
                 self.encoder = T5SidePPStack(encoder_config, self.shared)
             else:
@@ -190,7 +194,8 @@ class T5SidePPModel(nn.Module):
             decoder_config = copy.deepcopy(config)
             decoder_config.is_decoder = True
             decoder_config.is_encoder_decoder = False
-            decoder_config.num_layers = config.num_decoder_layers
+            decoder_config.is_encoder_decoder = False
+            decoder_config.num_layers = config.num_pp_decoder_layers
             if config.is_decoder_first:
                 self.decoder = T5SidePPStack(decoder_config, self.shared)
             else:
@@ -250,8 +255,7 @@ class T5SidePPModel(nn.Module):
                     side_encoder_hidden_states = side_encoder_outputs
                     )
             if self.config.is_decoder_last : 
-                sequence_output =  self.side_final_upsample(side_encoder_outputs)
-                sequence_output =  sequence_output + decoder_outputs
+                sequence_output =  self.side_final_upsample(side_decoder_outputs) + decoder_outputs
                 return sequence_output,None
             else:
                 return decoder_outputs, side_decoder_outputs
@@ -287,6 +291,7 @@ class SideStageModel(nn.Module):
                 decoder_input_ids = torch.zeros([self.config.batch_size,1], dtype=torch.long).to(self.config.device)
                 decoder_outputs,side_decoder_outputs = self.base_model(
                     input_ids=None,
+                    inputs_embeds = None,
                     decoder_input_ids = decoder_input_ids,
                     encoder_outputs = x[2],
                     side_encoder_outputs = x[3],
@@ -296,6 +301,7 @@ class SideStageModel(nn.Module):
                 assert x[1] is not None
                 decoder_outputs,side_decoder_outputs = self.base_model(
                     input_ids = None,
+                    inputs_embeds = None,
                     decoder_input_ids = None,
                     decoder_inputs_embeds = x[0],
                     side_decoder_inputs_embeds = x[1],

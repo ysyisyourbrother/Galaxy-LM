@@ -3,11 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 import argparse
-from train_config.t5.t5_config import T5Config
+from train_config.bart.config import BartConfig
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 from galaxy.utils import get_max_memory
 from galaxy.adapters.utils import modify_model_for_peft,get_parameter_number
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_file',default=None ,type=str)
@@ -18,14 +19,14 @@ class  Model(nn.Module):
         super(Model, self).__init__()
         self.config = config
         if config.use_side: # side 
-            from galaxy.models.t5.t5_side_model import T5SideModel 
-            self.base_model = T5SideModel(config)
+            from galaxy.models.bart.bart_side_model import  BartModel
+            self.base_model = BartModel(config)
         elif config.use_side_only: # forward free side 
-            from galaxy.models.t5.t5_side_only import T5SideOnly
-            self.base_model = T5SideOnly(config)
+            from galaxy.models.bart.bart_side_only import  BartModel
+            self.base_model = BartModel(config)
         else: # full / lora / adapter
-            from galaxy.models.t5.t5_model import T5Model
-            self.base_model = T5Model(config)
+            from galaxy.models.bart.bart_model import BartModel
+            self.base_model = BartModel(config)
         modify_model_for_peft(self.base_model, config)
         self.lm_head = nn.Linear(config.d_model, config.num_classes, bias=False)
     def forward(self, x):
@@ -39,7 +40,7 @@ class  Model(nn.Module):
 
 if __name__ == '__main__':
     args = parse_args()
-    config = T5Config()
+    config = BartConfig()
     if  args.config_file != None:
         config.load_from_json(args.config_file)
     else:

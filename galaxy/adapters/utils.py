@@ -1,4 +1,4 @@
-from transformers.activations import get_activation
+from galaxy.activations.utils import get_activation
 import torch.nn as nn
 from galaxy.loralib.utils import mark_only_lora_as_trainable
 

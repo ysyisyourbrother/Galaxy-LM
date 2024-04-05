@@ -75,24 +75,49 @@ if __name__ == '__main__':
     else:
         model.eval()
         print("Start inferencing")
-        
+    model.train()
     # TODO: 使用更合适的优化器
+    forward_time_total = 0.0
+    backward_time_total = 0.0
     start_time = time.time()
+    iter = 0
     optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
-    for i in range(config.num_epochs):
-        print("epoch: ",i)
-        for i, (trains, labels) in enumerate(train_iter):
-            outputs = model(trains)
-            if config.train:
-                model.zero_grad()
-                loss = F.cross_entropy(outputs, labels)
-                loss.backward()
-                optimizer.step()
-                # print(f"finish {i} iteration.")
-        # break
-    print("Finish...")
-    time_usage = get_time_dif(start_time)
-    print(time_usage)
-    print(f"{time_usage.seconds} (seconds)")
-    get_max_memory(config)
+    warm_up_iter =5
+    print("warn up for {} iterations".format(warm_up_iter))
+    for i in range(warm_up_iter):
+        trains, labels = next(train_iter)   
+        outputs = model(trains)
+        loss = F.cross_entropy(outputs, labels)
+        model.zero_grad()
+        loss.backward()
+        optimizer.step()
+    print("warm up finish...")
     
+    forward_time_total = 0.0
+    backward_time_total = 0.0
+    run_iter=  10
+    print("run for  {} iterations".format(run_iter))
+    torch.cuda.synchronize()
+    global_start = time.time()
+    for i in range(run_iter):
+        #############################################
+        trains, labels = next(train_iter)   
+        torch.cuda.synchronize()
+        start = time.time()
+        outputs = model(trains)
+        loss = F.cross_entropy(outputs, labels)
+        torch.cuda.synchronize()
+        end = time.time()
+        forward_time_total += (end - start)
+        ######################################################
+        model.zero_grad()
+        loss.backward()
+        optimizer.step()
+        #########################################################
+    torch.cuda.synchronize()
+    global_end = time.time()
+    backward_time_total = global_end - global_start - forward_time_total
+    print("forward time: {} s for {} iterations".format(forward_time_total, run_iter ))
+    print("backward time: {} s for {} iterations".format(backward_time_total , run_iter))
+    print("global elapse time: {} s for {} iterations".format(global_end - global_start, run_iter ))
+    get_max_memory(config)

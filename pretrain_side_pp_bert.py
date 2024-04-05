@@ -84,12 +84,24 @@ if __name__ == '__main__':
                               optimizer=torch.optim.SGD, 
                               lr=0.01, 
                               if_cuda=True)
+    warm_up_iter = 5
+    runtime.set_record()
+    print("warn up for {} iterations".format(warm_up_iter))
+    runtime.run_iteration(warm_up_iter)
+    
+    
+    run_iter= 10
+    runtime.set_record()
     torch.cuda.synchronize()
-    start = time.time()
-    for i in range(config.num_iterations):
-        runtime.forward_backward_pipelining()
+    global_start = time.time()
+    print("run for  {} iterations".format(run_iter))
+    runtime.run_iteration(run_iter)
     torch.cuda.synchronize()
-    end = time.time()
-    print("total time: {} s".format((end - start) ))
-    get_max_memory(config)
-    print("Finish...")
+    global_end = time.time()
+    
+    
+    print("Stage {} Finish...".format(config.stage))
+    print( "forward time: {} s for {} iterations".format( runtime.forward_time_total, run_iter ))
+    print("backward time: {} s for {} iterations".format( runtime.backward_time_total , run_iter))
+    print("global elapse time: {} s for {} iterations".format( global_end - global_start , run_iter))
+    get_max_memory(config)  

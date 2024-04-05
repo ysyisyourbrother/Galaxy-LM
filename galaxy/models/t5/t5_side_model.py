@@ -5,6 +5,7 @@ import copy
 from galaxy.models.t5.t5_model import  T5Block,T5LayerNorm, _expand_mask
 from typing import List, Optional, Tuple, Union
 from torch import Tensor
+import time
 class T5SideStack( nn.Module):
     def __init__(self, config, embed_tokens=None):
         super().__init__( )
@@ -197,24 +198,27 @@ class T5SideModel(nn.Module):
         head_mask: Optional[torch.FloatTensor] = None,
         decoder_head_mask: Optional[torch.FloatTensor] = None,
     ):
+       
         decoder_input_ids = torch.zeros([self.config.batch_size,1], dtype=torch.long).to(self.config.device) #TODO: 先这样
         encoder_outputs, side_encoder_outputs = self.encoder(
                 input_ids=input_ids,
                 inputs_embeds=inputs_embeds,
                 side_inputs_embeds=side_inputs_embeds,
             )
-            
+     
+     
         hidden_states = encoder_outputs 
         side_hidden_states = side_encoder_outputs
-        decoder_outputs, side_encoder_outputs = self.decoder(
+        decoder_outputs, side_decoder_outputs = self.decoder(
             input_ids=decoder_input_ids,
             inputs_embeds=decoder_inputs_embeds,
             side_inputs_embeds=side_decoder_inputs_embeds,
             encoder_hidden_states=hidden_states,
             side_encoder_hidden_states=side_hidden_states,
         )
+       
         # merge
-        sequence_output = self.side_final_upsample(side_encoder_outputs)
+        sequence_output = self.side_final_upsample(side_decoder_outputs)
         sequence_output = sequence_output + decoder_outputs
         return sequence_output  
         

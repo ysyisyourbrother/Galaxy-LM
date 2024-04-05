@@ -5,7 +5,7 @@
     "vocab_path": "dataset/THUCNews/vocab.txt",
     "device": "cuda",
     "train": true,
-    "num_epochs": 1,
+    "num_epochs": 3,
     "batch_size": 64,
     "pad_size": 128,
     "learning_rate": 5e-5,
