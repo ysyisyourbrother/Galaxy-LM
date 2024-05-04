@@ -205,13 +205,11 @@ class CommunicationHandler():
                 self.backward_send_queues.add(tensor)
             else:
                 self.backward_encoder_output_send_queues.add(tensor)
-            print("Stage {} backward send queue add tensor". format(self.config.stage))
         else:            
             if encoder_output :
                 self.forward_encoder_output_send_queues.add(tensor)
             else:
                 self.forward_send_queues.add(tensor)
-                print("Stage {} forward send queue add tensor". format(self.config.stage))
 
     
     def recv(self, backward=False, encoder_output =False):

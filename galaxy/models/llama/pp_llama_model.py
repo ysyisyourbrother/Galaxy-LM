@@ -7,6 +7,7 @@ import torch.utils.checkpoint
 from torch import nn
 from galaxy.models.llama.llama_model import  _make_causal_mask,_expand_mask
 from galaxy.models.llama.llama_model import LlamaRMSNorm,LlamaDecoderLayer
+from galaxy.adapters.utils import modify_model_for_peft,get_parameter_number
 
 
 class PPLlamaModel(nn.Module):
@@ -81,3 +82,39 @@ class PPLlamaModel(nn.Module):
         else:
             return hidden_states
 
+
+
+class  StageModel(nn.Module):
+    def __init__(self, config):
+        super(StageModel, self).__init__()
+        self.config = config
+        self.base_model = PPLlamaModel(config)
+        if config.is_last_stage: # 最后一个stage，有FC 分类层
+            self.lm_head = nn.Linear(config.hidden_size, config.num_classes)
+        modify_model_for_peft(self.base_model, config)
+    def forward(self, x):
+        # x: (token_ids, int(label), seq_len, mask)
+        if self.config.is_first_stage: # 第一个stage
+            context = (x[0]).to(self.config.device)
+            # mask = (x[2]).to(self.config.device)
+            hidden_states= self.base_model(
+            input_ids=context,
+            attention_mask=None,
+            inputs_embeds = None
+            )
+            return hidden_states
+        elif self.config.is_last_stage: #最后一个stage 经过分类层
+            pooled = self.base_model(
+            input_ids=None, 
+            attention_mask=None,
+            inputs_embeds = x,
+            )
+            out = self.lm_head(pooled)
+            return out
+        else: #中间stage
+            hidden_states= self.base_model(
+            input_ids=None, 
+            attention_mask=None,
+            inputs_embeds = x,
+            )
+            return hidden_states

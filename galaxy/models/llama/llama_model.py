@@ -166,11 +166,12 @@ class LlamaAttention(nn.Module):
         self.q_proj = None
         self.k_proj = None
         self.v_proj = None
-        if config.use_lora and config.lora_att_dim != 0:
+        self.o_proj = None
+        if config.use_lora and config.lora_dim != 0:
             if "q_proj" in config.lora_target_modules:
                 self.q_proj = LoraLinear(config.hidden_size, 
                                 num_heads * self.head_dim,
-                                r = config.lora_att_dim,
+                                r = config.lora_dim,
                                 lora_alpha = config.lora_alpha,
                                 lora_dropout = config.lora_dropout,
                                 fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
@@ -179,7 +180,7 @@ class LlamaAttention(nn.Module):
             if "k_proj"  in config.lora_target_modules:
                 self.k_proj = LoraLinear(config.hidden_size, 
                                 num_heads * self.head_dim,
-                                r = config.lora_att_dim,
+                                r = config.lora_dim,
                                 lora_alpha = config.lora_alpha,
                                 lora_dropout = config.lora_dropout,
                                 fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
@@ -188,12 +189,21 @@ class LlamaAttention(nn.Module):
             if "v_proj"  in config.lora_target_modules:
                 self.v_proj = LoraLinear(config.hidden_size, 
                                 num_heads * self.head_dim,
-                                r = config.lora_att_dim,
+                                r = config.lora_dim,
                                 lora_alpha = config.lora_alpha,
                                 lora_dropout = config.lora_dropout,
                                 fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
                                 merge_weights = config.merge_weights,
                                 bias=False)  
+            if "o_proj"  in config.lora_target_modules:
+                self.o_proj = LoraLinear(config.hidden_size, 
+                                num_heads * self.head_dim,
+                                r = config.lora_dim,
+                                lora_alpha = config.lora_alpha,
+                                lora_dropout = config.lora_dropout,
+                                fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
+                                merge_weights = config.merge_weights,
+                                bias=False)
         if self.q_proj == None:
             self.q_proj = nn.Linear(
             hidden_size,
@@ -212,7 +222,8 @@ class LlamaAttention(nn.Module):
             num_heads * self.head_dim,
             bias=False,
             )
-        self.o_proj = nn.Linear(
+        if self.o_proj == None:
+            self.o_proj = nn.Linear(
             num_heads * self.head_dim,
             hidden_size,
             bias=False,

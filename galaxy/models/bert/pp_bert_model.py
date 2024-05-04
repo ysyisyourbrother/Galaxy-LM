@@ -5,6 +5,7 @@ import copy
 from galaxy.models.bert.bert_model import gelu, swish
 from galaxy.models.bert.bert_model import BertEmbeddings,BertPooler,BertMLP,BertConnectLayer,BertLayer
 from galaxy.loralib.layers import  Linear as LoraLinear
+from galaxy.adapters.utils import modify_model_for_peft
 
 class PPBertEncoder(nn.Module):
     def __init__(self, config):
@@ -64,4 +65,37 @@ class PPBertModel(nn.Module):
             pooled_output = self.pooler(sequence_output)
             return   pooled_output
         else:
+            return hidden_states
+
+
+class StageModel(nn.Module):
+    def __init__(self, config):
+        super(StageModel, self).__init__()
+        self.base_model =  PPBertModel(config)
+        self.config = config
+        if config.is_last_stage: # 最后一个stage，有FC 分类层
+            self.fc = nn.Linear(config.hidden_size, config.num_classes)
+        modify_model_for_peft(self.base_model, config)
+
+    
+    def forward(self, x):
+        # x: (token_ids, int(label), seq_len, mask)
+        if self.config.is_first_stage: # 第一个stage
+            context, mask = x[0], x[2]
+            hidden_states = self.base_model(context, 
+                                        attention_mask=mask, 
+                                        )
+            return hidden_states
+        elif self.config.is_last_stage: #最后一个stage 经过分类层
+            input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
+            pooled = self.base_model(input_ids, 
+                                encoder_input=x, 
+                                 )
+            out = self.fc(pooled)
+            return out
+        else: #中间stage
+            input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
+            hidden_states = self.base_model(input_ids, 
+                                        encoder_input=x,
+                                      )
             return hidden_states

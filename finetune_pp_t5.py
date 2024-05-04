@@ -40,6 +40,15 @@ if __name__ == '__main__':
         model = StageModel(config).to(config.device)
     mem_after = torch.cuda.memory_allocated()
     print("Model memory usage: {} ( {} MB ) ".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024) ))
+    
+    total_params = get_parameter_number(model)["Total"]
+    trainale_params = get_parameter_number(model)["Trainable"]
+    print(f"Estimated model size: {total_params * 4 / (1024 ** 2)} MB = {total_params * 4 / (1024 ** 2) / 1024 } GB" )
+        # Assuming gradients are stored with the same precision as the weights
+    gradient_memory = trainale_params * 4 / (1024 ** 2)  # float32 storage
+    print(f"Estimated gradient memory usage: {gradient_memory} MB , {gradient_memory / 1024} GB")
+    
+    
     # print(model)
     if config.train:
         model.train()

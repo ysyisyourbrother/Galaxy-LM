@@ -3,9 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 import time
-from train_config.bert.dp_bert_config import config
+from train_config.bert.dp.config import  BertConfig
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
-import galaxy.models.bert.bert_model as bert_model
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.initialize import initialize_galaxy
 from galaxy.utils import clean_up
@@ -13,34 +12,12 @@ from galaxy.global_vars import get_args
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
 from galaxy.utils import get_max_memory
 
-class Model(nn.Module):
-    def __init__(self, config):
-        super(Model, self).__init__()
-        self.config = config
-        self.bert = bert_model.BertModel(config)
-        if not config.use_lora or config.lora_att_dim == 0:
-            print("not use lora, train full parameters")
-            for param in self.bert.parameters():
-                param.requires_grad = True
-        else:
-            print("use lora...")
-            mark_only_lora_as_trainable(self.bert)
-        # 最后用一个全连接层将提取到的特征转化为num_class个值
-        self.fc = nn.Linear(config.hidden_size, config.num_classes)
-
-    def forward(self, x):
-        
-        # x: (token_ids, seq_len, mask)
-        context = (x[0]).to(self.config.device)
-        mask = (x[2]).to(self.config.device)
-        pooled = self.bert(context, attention_mask=mask)
-        out = self.fc(pooled)
-        return out
-
+from pretrain_bert import Model
 
 
 if __name__ == '__main__':
     # Initial Galaxy, args
+    config = BertConfig()
     initialize_galaxy(config)
     args = get_args()
     config.print_config()
@@ -63,7 +40,7 @@ if __name__ == '__main__':
     # Train
     if config.train:
         model.train()
-        print('number of bert parameters:', get_parameter_number(model.bert)) 
+        print('number of bert parameters:', get_parameter_number(model.base_model)) 
         print('number of fc parameters:', get_parameter_number(model.fc)) 
         print("Start training")
     else:

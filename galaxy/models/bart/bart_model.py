@@ -21,19 +21,8 @@ from typing import List, Optional, Tuple, Union
 import torch
 import torch.utils.checkpoint
 from torch import nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
-from transformers.activations import ACT2FN
-from transformers.modeling_outputs import (
-    BaseModelOutput,
-    BaseModelOutputWithPastAndCrossAttentions,
-    CausalLMOutputWithCrossAttentions,
-    Seq2SeqLMOutput,
-    Seq2SeqModelOutput,
-    Seq2SeqQuestionAnsweringModelOutput,
-    Seq2SeqSequenceClassifierOutput,
-)
-
+from galaxy.activations.utils import ACT2FN
 from galaxy.loralib.layers import  Linear as LoraLinear
 from galaxy.adapters.utils import Adapter
 
@@ -220,9 +209,13 @@ class BartAttention(nn.Module):
         query_states = self._shape(query_states, tgt_len, bsz).view(*proj_shape)
         key_states = key_states.reshape(*proj_shape)
         value_states = value_states.reshape(*proj_shape)
-
+        # print("query_states", query_states.shape)
+        # print("key_states", key_states.shape)
+        # print("value_states", value_states.shape)
+        
         src_len = key_states.size(1)
         attn_weights = torch.bmm(query_states, key_states.transpose(1, 2))
+        # print("attn_weights", attn_weights.shape)
 
         if attn_weights.size() != (bsz * self.num_heads, tgt_len, src_len):
             raise ValueError(
@@ -260,9 +253,9 @@ class BartAttention(nn.Module):
             attn_weights_reshaped = None
 
         attn_probs = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
-
+        # print("attn_probs", attn_probs.shape)
         attn_output = torch.bmm(attn_probs, value_states)
-
+        # print("attn_output", attn_output.shape)
         if attn_output.size() != (bsz * self.num_heads, tgt_len, self.head_dim):
             raise ValueError(
                 f"`attn_output` should be of size {(bsz * self.num_heads, tgt_len, self.head_dim)}, but is"
@@ -493,7 +486,7 @@ class BartEncoder(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         head_mask: Optional[torch.Tensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
-    ) -> Union[Tuple, BaseModelOutput]:
+    ) :
         # retrieve input_ids and inputs_embeds
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
@@ -510,7 +503,8 @@ class BartEncoder(nn.Module):
 
         embed_pos = self.embed_positions(input)
         embed_pos = embed_pos.to(inputs_embeds.device)
-
+        # print("input_ids shape:", input_ids.shape)
+        # print("embed_pos shape:", embed_pos.shape)
         hidden_states = inputs_embeds + embed_pos
         hidden_states = self.layernorm_embedding(hidden_states)
         hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
@@ -603,7 +597,7 @@ class BartDecoder( nn.Module ):
         cross_attn_head_mask: Optional[torch.Tensor] = None,
         past_key_values: Optional[List[torch.FloatTensor]] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
-    ) -> Union[Tuple, BaseModelOutputWithPastAndCrossAttentions]:
+    )   :
         # retrieve input_ids and inputs_embeds
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
@@ -638,7 +632,9 @@ class BartDecoder( nn.Module ):
 
         hidden_states = inputs_embeds + positions
         hidden_states = self.layernorm_embedding(hidden_states)
-
+        # print("input_ids shape:", input_ids.shape)
+        # print("positions shape:", positions.shape)
+        # print("hidden_states shape:", hidden_states.shape)
         hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
 
         # check if head_mask/cross_attn_head_mask has a correct number of layers specified if desired
@@ -699,32 +695,20 @@ class BartModel( nn.Module ):
     def forward(
         self,
         input_ids: torch.LongTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
-        decoder_attention_mask: Optional[torch.LongTensor] = None,
-        head_mask: Optional[torch.Tensor] = None,
-        decoder_head_mask: Optional[torch.Tensor] = None,
-        cross_attn_head_mask: Optional[torch.Tensor] = None,
         encoder_outputs: Optional[List[torch.FloatTensor]] = None,
-        past_key_values: Optional[List[torch.FloatTensor]] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
-    ) -> Union[Tuple, Seq2SeqModelOutput]:
+    ) :
         encoder_outputs = self.encoder(
                 input_ids=input_ids,
-                attention_mask=attention_mask,
-                head_mask=head_mask,
                 inputs_embeds=inputs_embeds,
             )
         decoder_input_ids = torch.zeros([self.config.batch_size,1], dtype=torch.long).to(self.config.device) #TODO: 先这样
         decoder_outputs = self.decoder(
             input_ids=decoder_input_ids,
-            attention_mask=decoder_attention_mask,
             encoder_hidden_states=encoder_outputs ,
-            encoder_attention_mask=attention_mask,
-            head_mask=decoder_head_mask,
-            cross_attn_head_mask=cross_attn_head_mask,
-            past_key_values=past_key_values,
             inputs_embeds=decoder_inputs_embeds,
         )
+        # print(decoder_outputs.shape)
         return decoder_outputs

@@ -4,12 +4,14 @@ import torch.nn.functional as F
 import time
 import argparse
 
-from  train_config.llama.llama_config import LlamaConfig
+from  train_config.llama.config import LlamaConfig
 from  galaxy.models.llama.llama_model import LlamaModel
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.utils import get_max_memory
+from galaxy.adapters.utils import modify_model_for_peft,get_parameter_number
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_file',default=None ,type=str)
@@ -18,20 +20,14 @@ class  Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
         self.config = config
-        self.llama_model = LlamaModel(config)
-        if not config.use_lora or config.lora_att_dim == 0:
-            print("not use lora, train full parameters ...")
-            for param in self.llama_model.parameters():
-                param.requires_grad = True
-        else: 
-            print("use lora  ...")
-            mark_only_lora_as_trainable(self.llama_model)
+        self.base_model = LlamaModel(config)
+        modify_model_for_peft(self.base_model, config)
         self.lm_head = nn.Linear(config.hidden_size, config.num_classes)
     def forward(self, x):
         context = (x[0]).to(self.config.device) # [bs,seq]
         mask = (x[2]).to(self.config.device)# [bs,seq]
         # print(context.shape, mask.shape)
-        pooled = self.llama_model(
+        pooled = self.base_model(
             input_ids=context,
             attention_mask=mask,
         )
@@ -63,7 +59,7 @@ if __name__ == '__main__':
 
     if config.train:
         model.train()
-        print('number of llama_model parameters:', get_parameter_number(model.llama_model))
+        print('number of llama_model parameters:', get_parameter_number(model.base_model))
         print('number of lm_head parameters:', get_parameter_number(model.lm_head))
         print("Start training")
     else:

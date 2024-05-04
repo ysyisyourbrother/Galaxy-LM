@@ -1,10 +1,9 @@
 # bin
 *.bin
 *.ipynb
-
 tmp/*
-
-
+dp_all_reduce_t5.py
+pp_t5_com.py
 # Dataset
 dataset/*
 !README.md
@@ -201,3 +200,8 @@ galaxy/moe/res.txt
 test_t5.py
 1.py
 test_memory.py
+rsync.sh
+profile_flpos_t5.py
+profile_flpos_bart.py
+profile_memory.py
+profile_memory_bart.py

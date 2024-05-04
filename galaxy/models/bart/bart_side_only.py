@@ -21,17 +21,7 @@ from typing import List, Optional, Tuple, Union
 import torch
 import torch.utils.checkpoint
 from torch import nn
-from galaxy.models.bart.bart_model import BartEncoderLayer,BartDecoderLayer,BartLearnedPositionalEmbedding,_expand_mask,_make_causal_mask,shift_tokens_right
-from transformers.activations import ACT2FN
-from transformers.modeling_outputs import (
-    BaseModelOutput,
-    BaseModelOutputWithPastAndCrossAttentions,
-    CausalLMOutputWithCrossAttentions,
-    Seq2SeqLMOutput,
-    Seq2SeqModelOutput,
-    Seq2SeqQuestionAnsweringModelOutput,
-    Seq2SeqSequenceClassifierOutput,
-)
+from galaxy.models.bart.bart_model import BartEncoderLayer,BartDecoderLayer,  _expand_mask,_make_causal_mask,shift_tokens_right
 
 
 class BartEncoder(nn.Module):
@@ -82,7 +72,7 @@ class BartEncoder(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         head_mask: Optional[torch.Tensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
-    ) -> Union[Tuple, BaseModelOutput]:
+    ) :
         # retrieve input_ids and inputs_embeds
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
@@ -217,7 +207,7 @@ class BartDecoder( nn.Module ):
         cross_attn_head_mask: Optional[torch.Tensor] = None,
         past_key_values: Optional[List[torch.FloatTensor]] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
-    ) -> Union[Tuple, BaseModelOutputWithPastAndCrossAttentions]:
+    )  :
         # retrieve input_ids and inputs_embeds
         
         if input_ids is not None and inputs_embeds is not None:
@@ -344,7 +334,7 @@ class BartModel( nn.Module ):
         past_key_values: Optional[List[torch.FloatTensor]] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
-    ) -> Union[Tuple, Seq2SeqModelOutput]:
+    )  :
         # different to other models, Bart automatically creates decoder_input_ids from
         # input_ids if no decoder_input_ids are provided
         decoder_input_ids = torch.zeros([self.config.batch_size,1], dtype=torch.long).to(self.config.device) #TODO: 先这样

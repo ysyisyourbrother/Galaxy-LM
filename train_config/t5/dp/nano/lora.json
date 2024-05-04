@@ -1,0 +1,27 @@
+{
+    "train": true,
+    "device": "cuda",
+    "batch_size": 16,
+    "pad_size": 128,
+    "d_model": 768,
+    "d_kv": 64,
+    "d_ff": 3072,
+    "num_layers": 1,
+    "num_decoder_layers": 1,
+    "num_heads": 1,
+    "is_encoder_decoder": true,
+
+    "full_model" : false,
+    "use_lora": true,
+    "use_adapter": false,
+    "use_side": false,
+    "use_side_only": false,
+    "lora_dim": 4,
+    "lora_alpha": 32,
+    "lora_dropout": 0.1,
+    "fan_in_fan_out": true,
+    "merge_weights": false,
+
+    "init_method": "tcp://192.168.124.7:23000",
+    "distributed_backend": "gloo"
+}

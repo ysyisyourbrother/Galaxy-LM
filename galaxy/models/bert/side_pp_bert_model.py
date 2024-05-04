@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import copy
 from galaxy.models.bert.bert_model import  BertEmbeddings,BertPooler,BertLayer
+from galaxy.models.bert.bert_side_model import mark_only_side_as_trainable 
 
 class SidePPBertEncoder(nn.Module):
     def __init__(self, config):
@@ -70,3 +71,42 @@ class SidePPBertModel(nn.Module):
             return    pooled_output 
         else:  # 否则返回中间states
             return hidden_states,side_hidden_states
+        
+        
+class StageModel(nn.Module):
+    def __init__(self, config):
+        super(StageModel, self).__init__()
+        self.base_model = SidePPBertModel(config)
+        self.config = config
+        if config.is_last_stage: # 最后一个stage，有FC 分类层
+            self.fc = nn.Linear(config.hidden_size, config.num_classes)
+        mark_only_side_as_trainable(self.base_model)
+    def forward(self, x,  side):   
+        # x: (token_ids, int(label), seq_len, mask)
+        if self.config.is_first_stage: # 第一个stage
+            context, mask = x[0].to(self.config.device), x[2].to(self.config.device)
+            hidden_states, side_hidden_states = self.base_model(input_ids = context,
+                                                        hidden_state = None,
+                                                        hidden_state_side = None,
+                                                        token_type_ids = None,
+                                                        attention_mask = mask
+                                                        )
+            return hidden_states, side_hidden_states
+        elif self.config.is_last_stage: #最后一个stage 经过分类层
+            input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
+            pooled =  self.base_model(input_ids = input_ids,
+                                hidden_state = x,
+                                hidden_state_side = side,
+                                token_type_ids=None, 
+                                attention_mask=None)
+            out = self.fc(pooled)
+            return out
+        else:
+            input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
+            hidden_states, side_hidden_states  = self.base_model(input_ids = input_ids,
+                                hidden_state = x,
+                                hidden_state_side = side,
+                                token_type_ids=None, 
+                                attention_mask=None)
+            return hidden_states, side_hidden_states 
+        

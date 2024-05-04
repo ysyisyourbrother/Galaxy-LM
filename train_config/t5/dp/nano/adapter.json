@@ -1,0 +1,24 @@
+{
+    "train": true,
+    "device": "cuda",
+    "batch_size": 16,
+    "pad_size": 128,
+    "d_model": 768,
+    "d_kv": 64,
+    "d_ff": 3072,
+    "num_layers": 1,
+    "num_decoder_layers": 1,
+    "num_heads": 1,
+    "is_encoder_decoder": true,
+
+    "full_model" : false,
+    "use_lora": false,
+    "use_adapter": true,
+    "use_side": false,
+    "use_side_only": false,
+    "adapter_reduction_dim": 16,
+    
+        
+    "init_method": "tcp://127.0.0.1:23000",
+    "distributed_backend": "gloo"
+}

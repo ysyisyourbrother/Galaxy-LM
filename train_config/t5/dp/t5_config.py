@@ -126,93 +126,14 @@ class T5Config( ):
             raise FileNotFoundError("config file: {} not found".format(config_file))
         with open(config_file, "r") as f:
             config_dict = json.load(f)
-            print("========== Updating config from file: ", config_file,"==========")
-        """ Data Configuration """
-        self.train_path = config_dict["train_path"]
-        self.dev_path = config_dict["dev_path"]
-        self.test_path = config_dict["test_path"]
-        self.vocab_path = config_dict["vocab_path"]
-        # Training Configuration
-        self.train = config_dict["train"]
-        self.device = config_dict["device"]
-        if self.device == "cuda":
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备
-        else:
-            self.device = torch.device('cpu')
-        self.num_epochs = config_dict["num_epochs"]
-        self.batch_size = config_dict["batch_size"]
-        self.pad_size = config_dict["pad_size"]
-        self.learning_rate = config_dict["learning_rate"]
-        self.class_list = [x.strip() for x in open(
-            "dataset/THUCNews/data/class.txt").readlines()]  
-        self.num_classes = len(self.class_list)
-        #  模型参数
-        self.d_model = config_dict["d_model"]
-        self.d_kv =  config_dict["d_kv"]
-        self.d_ff =  config_dict["d_ff"]
-        self.num_layers =  config_dict["num_layers"]
-        self.num_decoder_layers =   config_dict["num_decoder_layers"]
-        self.num_heads =  config_dict["num_heads"]
-        self.relative_attention_num_buckets =  config_dict["relative_attention_num_buckets"]
-        self.relative_attention_max_distance =  config_dict["relative_attention_max_distance"]
-        self.dropout_rate =  config_dict["dropout_rate"]
-        self.classifier_dropout =  config_dict["classifier_dropout"] 
-        self.layer_norm_epsilon =  config_dict["layer_norm_epsilon"]
-        self.initializer_factor =   config_dict["initializer_factor"]
-        self.feed_forward_proj =  config_dict["feed_forward_proj"]
-        
-        act_info = self.feed_forward_proj.split("-")
-        self.dense_act_fn = act_info[-1]
-        self.is_gated_act = act_info[0] == "gated"
-        if len(act_info) > 1 and act_info[0] != "gated" or len(act_info) > 2:
-            raise ValueError(
-                f"`feed_forward_proj`: {self.feed_forward_proj } is not a valid activation function of the dense layer. "
-                "Please make sure `feed_forward_proj` is of the format `gated-{ACT_FN}` or `{ACT_FN}`, e.g. "
-                "'gated-gelu' or 'relu'"
-            )
-        # for backwards compatibility
-        if self.feed_forward_proj  == "gated-gelu":
-            self.dense_act_fn = "gelu_new"
-        # fixed
-        self.decoder_start_token_id = 0
-        self.is_encoder_decoder = True
-        self.pad_token_id = 0
-        self.eos_token_id = 1
-        self.return_dict = False
-        self.use_cache = False
-        self.output_attentions = False  
-        self.output_hidden_states = False
-        #############################################
-        # full model
-        self.full_model = config_dict["full_model"]
-        # Lora
-        self.use_lora = config_dict["use_lora"]
-        if self.use_lora:
-            self.lora_dim = config_dict["lora_dim"]
-            self.lora_alpha = config_dict["lora_alpha"]
-            self.lora_dropout = config_dict["lora_dropout"]
-            self.fan_in_fan_out = config_dict["fan_in_fan_out"]
-            self.merge_weights = config_dict["merge_weights"]
-        # Adapter
-        self.use_adapter = config_dict["use_adapter"]
-        if self.use_adapter:
-            self.adapter_reduction_dim = config_dict["adapter_reduction_dim"]
-            self.non_linearity = config_dict["non_linearity"]
-        # side
-        self.use_side =  config_dict["use_side"]
-        if self.use_side:
-            self.side_reduction_factor =  config_dict["side_reduction_factor"]
-            self.add_bias_sampling =  config_dict["add_bias_sampling"]
-        # side only:
-        self.use_side_only =  config_dict["use_side_only"]
-        if self.use_side_only:
-            self.side_reduction_factor =  config_dict["side_reduction_factor"]
-            self.add_bias_sampling =  config_dict["add_bias_sampling"]
+            print("========== Updating config from file: ", config_file,"==========")  
+            for key, value in config_dict.items():
+                if hasattr(self, key):
+                    setattr(self, key, value)
+                else:
+                    print(f"Ignoring unknown attribute: {key}")
         self.check_adapter_config()
-        #######################################
-        # Distributed Configuration
-        self.init_method = config_dict["init_method"]                       # torch.dist.init_process_group中使用的master device
-        self.distributed_backend = config_dict["distributed_backend"] # 通信后端
+
     def print_config(self):
         for k,v in self.__dict__.items():
             print(k,v)

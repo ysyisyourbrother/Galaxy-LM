@@ -1,0 +1,23 @@
+{
+    "train": true,
+    "device": "cuda",
+    "num_epochs": 1,
+    "batch_size": 16,
+    "pad_size": 128,
+    "d_model": 1024,
+    "d_kv": 64,
+    "d_ff": 4096,
+    "num_layers": 24,
+    "num_decoder_layers": 24,
+    "num_heads": 16,
+    "is_encoder_decoder": true,
+    
+    "full_model" : false,
+    "use_lora": false,
+    "use_adapter": false,
+    "use_side": false,
+    "use_side_only": true,
+    "side_reduction_factor":16,
+    "add_bias_sampling": true
+} 
+    

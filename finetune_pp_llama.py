@@ -4,8 +4,8 @@ import torch.nn.functional as F
 import time
 import argparse
 
-from  train_config.llama.pp_llama_config import PPLlamaConfig
-from galaxy.models.llama.pp_llama_model import PPLlamaModel
+from  train_config.llama.pp.config import LlamaConfig
+from galaxy.models.llama.pp_llama_model import StageModel
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
 from galaxy.initialize import initialize_galaxy,get_args
 from galaxy.core.pipeline_parallel.schedules import PipelineRuntime
@@ -13,49 +13,9 @@ from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_numb
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.utils import clean_up, get_max_memory
 
-class  StageModel(nn.Module):
-    def __init__(self, config):
-        super(StageModel, self).__init__()
-        self.config = config
-        self.base_model = PPLlamaModel(config)
-        if config.is_last_stage: # 最后一个stage，有FC 分类层
-            self.lm_head = nn.Linear(config.hidden_size, config.num_classes)
-        if not config.use_lora or config.lora_att_dim == 0:
-            print("not use lora, train full parameters ... ")
-            for param in self.base_model.parameters():
-                param.requires_grad = True
-        else:
-            print("use lora, mark_only_lora_as_trainable ... ")
-            mark_only_lora_as_trainable(self.base_model)
-    def forward(self, x):
-        # x: (token_ids, int(label), seq_len, mask)
-        if self.config.is_first_stage: # 第一个stage
-            context = (x[0]).to(self.config.device)
-            # mask = (x[2]).to(self.config.device)
-            hidden_states= self.base_model(
-            input_ids=context,
-            attention_mask=None,
-            inputs_embeds = None
-            )
-            return hidden_states
-        elif self.config.is_last_stage: #最后一个stage 经过分类层
-            pooled = self.base_model(
-            input_ids=None, 
-            attention_mask=None,
-            inputs_embeds = x,
-            )
-            out = self.lm_head(pooled)
-            return out
-        else: #中间stage
-            hidden_states= self.base_model(
-            input_ids=None, 
-            attention_mask=None,
-            inputs_embeds = x,
-            )
-            return hidden_states
     
 if __name__ == '__main__':
-    config = PPLlamaConfig()
+    config = LlamaConfig()
     initialize_galaxy(config)
     args = get_args()
     config.update_pp_stage_config(args)

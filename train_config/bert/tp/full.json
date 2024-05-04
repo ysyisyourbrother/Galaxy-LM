@@ -1,0 +1,18 @@
+{
+    "train": true,
+    "batch_size": 4,
+    "pad_size": 32,
+    "hidden_size": 768,
+    "intermediate_size": 3072,
+    "num_attention_heads": 12,
+    "num_hidden_layers": 12,
+    "full_model" : true,
+    "use_lora": false,
+    "use_adapter": false,
+    "use_side": false,
+    "use_side_only": false,
+    "tp_num_attention_heads_list": [6,6],
+    "tp_intermediate_size_list": [1536,1536],
+    "init_method": "tcp://127.0.0.1:23000",
+    "distributed_backend": "gloo" 
+}

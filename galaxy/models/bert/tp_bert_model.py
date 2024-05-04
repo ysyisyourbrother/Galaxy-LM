@@ -28,14 +28,14 @@ class TPBertAttention(nn.Module):
         # 定义qkv大小，考虑张量并行对head的分割。默认qkv head_size相同
         
         self.qkv_projection_size = int(self.config.att_head_size * self.config.tp_num_attention_heads)
-        if config.use_lora == False or config.lora_att_dim == 0:
+        if config.use_lora == False or config.lora_dim == 0:
             self.query = nn.Linear(config.hidden_size, self.qkv_projection_size)
             self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
             self.value = nn.Linear(config.hidden_size, self.qkv_projection_size)
         else:
             self.query = LoraLinear(config.hidden_size, 
                              self.qkv_projection_size,
-                               r = config.lora_att_dim,
+                               r = config.lora_dim,
                                lora_alpha = config.lora_alpha,
                                lora_dropout = config.lora_dropout,
                                fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
@@ -43,7 +43,7 @@ class TPBertAttention(nn.Module):
             self.key = nn.Linear(config.hidden_size, self.qkv_projection_size)
             self.value = LoraLinear(config.hidden_size, 
                                self.qkv_projection_size,
-                               r = config.lora_att_dim,
+                               r = config.lora_dim,
                                lora_alpha = config.lora_alpha,
                                lora_dropout = config.lora_dropout,
                                fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)

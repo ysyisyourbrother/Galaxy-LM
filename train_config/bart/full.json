@@ -1,0 +1,20 @@
+{
+    "train": true,
+    "device": "cuda",
+    "num_epochs": 1,
+    "batch_size": 4,
+    "pad_size": 32,
+    "d_model":1024,
+    "encoder_ffn_dim":4096,
+    "encoder_layers":1,
+    "encoder_attention_heads":16,
+    "decoder_ffn_dim":4096,
+    "decoder_layers":1,
+    "decoder_attention_heads":16,
+    "num_hidden_layers":2,
+    "full_model" : true,
+    "use_lora": false,
+    "use_adapter": false,
+    "use_side": false,
+    "use_side_only": false
+}

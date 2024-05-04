@@ -3,6 +3,7 @@ import torch.nn as nn
 import math
 import copy
 from galaxy.loralib.layers import  Linear as LoraLinear
+from galaxy.adapters.utils import Adapter
 
 
 
@@ -56,7 +57,10 @@ class BertEmbeddings(nn.Module):
         words_embeddings = self.word_embeddings(input_ids)
         position_embeddings = self.position_embeddings(position_ids)
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
-
+        # print("input_ids.shape:", input_ids.shape)
+        # print("words_embeddings.shape:", words_embeddings.shape)
+        # print("position_embeddings.shape:", position_embeddings.shape)
+        # print("token_type_embeddings.shape:", token_type_embeddings.shape)
         embeddings = words_embeddings + position_embeddings + token_type_embeddings
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
@@ -75,14 +79,14 @@ class BertAttention(nn.Module):
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
         
-        if config.use_lora == False or config.lora_att_dim == 0:
+        if config.use_lora == False or config.lora_dim == 0:
             self.query = nn.Linear(config.hidden_size, self.all_head_size)
             self.key = nn.Linear(config.hidden_size, self.all_head_size)
             self.value = nn.Linear(config.hidden_size, self.all_head_size)
         else:
             self.query = LoraLinear(config.hidden_size, 
                                self.all_head_size,
-                               r = config.lora_att_dim,
+                               r = config.lora_dim,
                                lora_alpha = config.lora_alpha,
                                lora_dropout = config.lora_dropout,
                                fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
@@ -90,7 +94,7 @@ class BertAttention(nn.Module):
             self.key = nn.Linear(config.hidden_size, self.all_head_size)
             self.value = LoraLinear(config.hidden_size, 
                                 self.all_head_size,
-                                r = config.lora_att_dim,
+                                r = config.lora_dim,
                                 lora_alpha = config.lora_alpha,
                                 lora_dropout = config.lora_dropout,
                                 fan_in_fan_out = config.fan_in_fan_out, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
@@ -98,6 +102,13 @@ class BertAttention(nn.Module):
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)    
         # Linear output
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        # 
+        self.config = config
+        if self.config.use_adapter:
+            self.att_adapter_layer = Adapter(config)
+
+
+
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -129,6 +140,8 @@ class BertAttention(nn.Module):
         # 计算Q*K
         # [bs, num_att_head, seq_len, att_head_size] -> [bs, num_att_head, seq_len, seq_len]
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        # print("query_layer shape {} ,  key_layer.transpose {}".format(query_layer.shape, key_layer.transpose(-1, -2).shape))
+        # print("attention_scores shape {}".format(attention_scores.shape))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         attention_scores = attention_scores + attention_mask
@@ -142,6 +155,8 @@ class BertAttention(nn.Module):
         # 计算(QK)*V
         # [bs, num_att_head, seq_len, seq_len] -> [bs, num_att_head, seq_len, att_head_size]
         context_layer = torch.matmul(attention_probs, value_layer)
+        # print("attention_probs shape {} ,  value_layer.transpose {}".format(attention_probs.shape,value_layer.shape))
+
         # [bs, num_att_head, seq_len, att_head_size] -> [bs, seq_len, num_att_head, att_head_size]
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
@@ -150,6 +165,8 @@ class BertAttention(nn.Module):
         
         # Linear output
         multi_attention_output = self.dense(context_layer)
+        if self.config.use_adapter:
+            multi_attention_output = self.att_adapter_layer(multi_attention_output)
         return multi_attention_output
 
 
@@ -160,9 +177,17 @@ class BertMLP(nn.Module):
         self.dense2 = nn.Linear(config.intermediate_size, config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.activation = gelu
+        ##########################
+        self.config = config
+        if self.config.use_adapter:
+            self.ffn_adapter_layer = Adapter(config)
+
     
     def forward(self, hidden_states):
-        return self.dense2(self.dropout(self.activation(self.dense1(hidden_states))))
+        hidden_states =self.dense2(self.dropout(self.activation(self.dense1(hidden_states))))
+        if self.config.use_adapter:
+            hidden_states = self.ffn_adapter_layer(hidden_states)
+        return hidden_states
 
 class BertConnectLayer(nn.Module):
     '''Connective Block: Dropout + Add + Layernorm  '''
@@ -183,8 +208,8 @@ class BertLayer(nn.Module):
     def __init__(self, config):
         super(BertLayer, self).__init__()
         self.attention = BertAttention(config)
-        self.mlp = BertMLP(config)
         self.con1 = BertConnectLayer(config)
+        self.mlp = BertMLP(config)
         self.con2 = BertConnectLayer(config)
 
     def forward(self, hidden_states, attention_mask):

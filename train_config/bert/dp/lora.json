@@ -1,0 +1,26 @@
+{
+    
+    "train": true,
+    "batch_size": 4,
+    "pad_size": 32,
+    "hidden_size": 768,
+    "intermediate_size": 3072,
+    "num_attention_heads": 12,
+    "num_hidden_layers": 1,
+
+
+    "full_model" : false,
+    "use_lora": true,
+    "use_adapter": false,
+    "use_side": false,
+    "use_side_only": false,
+    "lora_dim": 32,
+    "lora_alpha": 32,
+    "lora_dropout": 0.1,
+    "fan_in_fan_out": true,
+    "merge_weights": false,
+
+    "init_method": "tcp://127.0.0.1:23000",
+    "distributed_backend": "gloo"
+    
+}

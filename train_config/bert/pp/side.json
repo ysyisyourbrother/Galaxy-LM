@@ -1,0 +1,24 @@
+{
+    "train": true,
+    "batch_size": 4,
+    "pad_size": 32,
+    "hidden_size": 768,
+    "intermediate_size": 3072,
+    "num_attention_heads": 12,
+    "num_hidden_layers": 12,
+
+    "full_model" : false,
+    "use_lora": false,
+    "use_adapter": false,
+    "use_side": true,
+    "use_side_only": false,
+    "side_reduction_factor": 8,
+    "add_bias_sampling": true,
+
+    "init_method": "tcp://127.0.0.1:23000",
+    "distributed_backend": "gloo",
+    "stage_num_hidden_layers_list": [6,6],
+    "num_microbatches": 1,
+    "num_iterations":1
+ 
+}

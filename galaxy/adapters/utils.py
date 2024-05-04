@@ -65,4 +65,4 @@ def modify_model_for_peft(model: nn.Module, config)  -> None:
         mark_only_side_as_trainable(model)
     else:
         raise NotImplementedError
-    print('number of base model parameters:', get_parameter_number(model))
+    print('number of model parameters:', get_parameter_number(model))

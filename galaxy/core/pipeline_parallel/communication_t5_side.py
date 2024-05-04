@@ -269,7 +269,6 @@ class CommunicationHandler():
                     self.backward_side_send_queues.add(tensor)
                 else:
                     raise Exception("no need to send base model gradient backward")
-            print("Stage {} backward send queue add tensor". format(self.config.stage))
         else:            
             if encoder_output :
                 if side:
@@ -281,7 +280,6 @@ class CommunicationHandler():
                     self.forward_side_send_queues.add(tensor)
                 else:
                     self.forward_send_queues.add(tensor)
-            print("Stage {} forward send queue add tensor". format(self.config.stage))
 
     
     def recv(self, backward=False, encoder_output =False, side = False):

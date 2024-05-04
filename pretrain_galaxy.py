@@ -4,41 +4,38 @@ import torch.nn.functional as F
 import time
 
 # TODO 将不同pretrain的config分离
-from train_config.bert.galaxy_bert_config import config
+from train_config.bert.galaxy.config import BertConfig
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
-import galaxy.models.bert.galaxy_bert_model as galaxy_bert_model
+from galaxy.models.bert.galaxy_bert_model  import GalaxyBertModel 
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.initialize import initialize_galaxy
 from galaxy.global_vars import get_args
 from galaxy.utils import clean_up
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
 from galaxy.utils import get_max_memory
+from galaxy.adapters.utils import modify_model_for_peft,get_parameter_number
+
 
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
-        self.bert = galaxy_bert_model.GalaxyBertModel(config)
-        if not config.use_lora or config.lora_att_dim == 0:
-            print("not use lora, train full parameters")
-            for param in self.bert.parameters():
-                param.requires_grad = True
-        else:
-            print("use lora")
-            mark_only_lora_as_trainable(self.bert)
-        # 最后用一个全连接层将提取到的特征转化为num_class个值
+        self.base_model =  GalaxyBertModel(config)
         self.fc = nn.Linear(config.hidden_size, config.num_classes)
+        modify_model_for_peft(self.base_model, config)
 
     def forward(self, x):
         # 每一个input的维度：(token_ids, int(label), seq_len, mask)
         context = x[0]
         mask = x[2]
-        pooled = self.bert(context, attention_mask=mask)
+        pooled = self.base_model(context, attention_mask=mask )
         out = self.fc(pooled)
         return out
 
 
+
 if __name__ == '__main__':
     # Initial Galaxy, args
+    config = BertConfig()
     initialize_galaxy(config)
     args = get_args()
     config.update_galaxy_config(args)
@@ -65,7 +62,7 @@ if __name__ == '__main__':
     # Train
     if config.train:
         model.train()
-        print('number of bert parameters:', get_parameter_number(model.bert)) 
+        print('number of bert parameters:', get_parameter_number(model.base_model)) 
         print('number of fc parameters:', get_parameter_number(model.fc)) 
         print("Start training")
     else:

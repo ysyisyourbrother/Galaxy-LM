@@ -43,11 +43,9 @@ class PipelineRuntime():
         # 发送tensor到下一个stage
         tensor = self.tensors[-1]["fw_out"]
         self.comm_handler.send(tensor, backward=False, side=False)
-        print("Stage {} send forward tensor shape {} type {}".format(self.stage , tensor.shape, tensor.dtype))
         # 发送side tensor到下一个stage
         tensor_side = self.tensors[-1]["fw_out_side"]
         self.comm_handler.send(tensor_side, backward=False, side=True)
-        print("Stage {} send forward side tensor shape {} type {}".format(self.stage , tensor_side.shape, tensor_side.dtype))
         
 
     def receive_tensors_forward(self, input_sample=None):
@@ -81,7 +79,6 @@ class PipelineRuntime():
             return  
 
         # 发送gradients到上一个stage
-        print("Stage {} send backward gradients shape {} type {}".format(self.stage , gradients.shape, gradients.dtype))
         self.comm_handler.send(gradients, backward=True, side=False)
 
 

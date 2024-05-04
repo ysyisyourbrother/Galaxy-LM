@@ -4,58 +4,23 @@ import torch.nn.functional as F
 import time
 # from pretrain_config.pp_bert_config import config
 from galaxy.data.build import build_dataset, build_iterator,get_time_dif
-import galaxy.models.bert.pp_bert_model as bert_model
+
 from galaxy.tokenizer.tokenizer import BertTokenizer
 from galaxy.initialize import initialize_galaxy
 from galaxy.utils import clean_up
 from galaxy.global_vars import initial_args, get_args
-from galaxy.core.pipeline_parallel.schedules import PipelineRuntime
 from galaxy.loralib.utils import mark_only_lora_as_trainable, get_parameter_number
-from train_config.bert.pp_bert_config import config
+from train_config.bert.pp.config import BertConfig
 from galaxy.utils import get_max_memory
 
+from galaxy.adapters.utils import modify_model_for_peft,get_parameter_number
 
 
-class StageModel(nn.Module):
-    def __init__(self, config):
-        super(StageModel, self).__init__()
-        self.bert = bert_model.PPBertModel(config)
-        self.config = config
-        if config.is_last_stage: # 最后一个stage，有FC 分类层
-            self.fc = nn.Linear(config.hidden_size, config.num_classes)
 
-        if not config.use_lora or config.lora_att_dim == 0:
-            print("not use lora, train full parameters")
-            for param in self.bert.parameters():
-                param.requires_grad = True
-        else:
-            print("use lora, mark_only_lora_as_trainable")
-            mark_only_lora_as_trainable(self.bert)
-    
-    def forward(self, x):
-        # x: (token_ids, int(label), seq_len, mask)
-        if self.config.is_first_stage: # 第一个stage
-            context, mask = x[0], x[2]
-            hidden_states = self.bert(context, 
-                                        attention_mask=mask, 
-                                        )
-            return hidden_states
-        elif self.config.is_last_stage: #最后一个stage 经过分类层
-            input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
-            pooled = self.bert(input_ids, 
-                                encoder_input=x, 
-                                 )
-            out = self.fc(pooled)
-            return out
-        else: #中间stage
-            input_ids = torch.zeros(self.config.batch_size, self.config.pad_size).long().to(self.config.device)
-            hidden_states = self.bert(input_ids, 
-                                        encoder_input=x,
-                                      )
-            return hidden_states
 
 if __name__ == '__main__':
     # Initial Galaxy, args
+    config = BertConfig()
     initialize_galaxy(config)
     args = get_args()
     config.update_pp_stage_config(args)
@@ -77,6 +42,10 @@ if __name__ == '__main__':
     # Prepare Model
     print(config.device)
     mem_before = torch.cuda.memory_allocated()
+    if config.use_side:
+        from galaxy.models.bert.side_pp_bert_model import StageModel
+    else:
+        from galaxy.models.bert.pp_bert_model import  StageModel
     model = StageModel(config).to(config.device)
     mem_after = torch.cuda.memory_allocated()
     print("Model memory usage: {} ( {} MB ) ".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024) ))
@@ -86,6 +55,11 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError("PipelineRuntime only supports train mode.")
     # Prepare PipelineRuntime
+    if config.use_side:
+        from galaxy.core.pipeline_parallel.schedules_side import PipelineRuntime
+    else:
+        from galaxy.core.pipeline_parallel.schedules import PipelineRuntime
+
     runtime = PipelineRuntime(config, 
                               model, 
                               loss_func=F.cross_entropy, 
