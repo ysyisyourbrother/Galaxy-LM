@@ -58,7 +58,7 @@ class Model(nn.Module):
 
 if __name__ == '__main__':
     if args.model == "bert":
-        from train_config.bert.bert_config import BertConfig
+        from train_config.bert.config import BertConfig
         config = BertConfig()
     elif  args.model == "bart":
         from train_config.bart.config import BartConfig
