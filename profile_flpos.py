@@ -14,57 +14,20 @@ def parse_args():
     parser.add_argument('--model',default="bert",type=str)
     parser.add_argument('--config_file',default=None,type=str)
     return parser.parse_args()
-args = parse_args()
-    
-class Model(nn.Module):
-    def __init__(self, config):
-        super(Model, self).__init__()
-        self.config = config
-        if args.model == "bert":
-            from galaxy.models.bert.bert_model import BertModel
-            self.base_model =  BertModel(config)
-        elif  args.model == "bart":
-            from galaxy.models.bart.bart_model import BartModel
-            self.base_model = BartModel(config)
-        elif args.model == "t5":
-            from galaxy.models.t5.t5_model import T5Model
-            self.base_model = T5Model(config)
-        else:
-            raise NotImplementedError
-        # 最后用一个全连接层将提取到的特征转化为num_class个值
-        if hasattr(config, 'hidden_size'):
-            self.fc = nn.Linear(config.hidden_size, config.num_classes)
-        elif  hasattr(config, 'd_model'):
-            self.fc = nn.Linear(config.d_model, config.num_classes)
-        else:
-            raise NotImplementedError
-
-    def forward(self, x):
-        if args.model == "bert":
-            # x: (token_ids, seq_len, mask)
-            context = (x[0]).to(self.config.device)
-            mask = (x[2]).to(self.config.device)
-            pooled = self.base_model(context, attention_mask=mask)
-            out = self.fc(pooled)
-            return out
-        else:
-            input_ids = (x[0]).to(self.config.device) # [bs,seq]
-            sequence_output = self.base_model(
-                input_ids=input_ids,
-            ) 
-            pooled = sequence_output[:,0,:]
-            out = self.fc(pooled)
-            return out
 
 if __name__ == '__main__':
+    args = parse_args()
     if args.model == "bert":
         from train_config.bert.config import BertConfig
+        from pretrain_bert import Model
         config = BertConfig()
     elif  args.model == "bart":
         from train_config.bart.config import BartConfig
+        from finetune_bart import Model
         config = BartConfig()
     elif args.model == "t5":
         from train_config.t5.t5_config import T5Config
+        from finetune_t5 import Model
         config = T5Config()
     else:
         raise NotImplementedError
@@ -75,7 +38,7 @@ if __name__ == '__main__':
         print("default config")
     config.print_config()
     
-    tokenizer = BertTokenizer.from_pretrained(config.vocab_path)#TODO:  不能用T5 tokenizer
+    tokenizer = BertTokenizer.from_pretrained(config.vocab_path) 
     start_time = time.time()
     print("Loading data...")
     train_data, dev_data, test_data = build_dataset(config, tokenizer)
@@ -83,37 +46,74 @@ if __name__ == '__main__':
     dev_iter = build_iterator(dev_data, config)
     test_iter = build_iterator(test_data, config)
     time_dif = get_time_dif(start_time)
-
+    # model memory
+    mem_before = torch.cuda.memory_allocated()
     model = Model(config).to(config.device)
-    if config.train:
-        model.train()
-        print('number of bert parameters:', get_parameter_number(model.base_model))
-        print('number of fc parameters:', get_parameter_number(model.fc))
-        print("Start training")
-    else:
-        model.eval()
-        print("Start inferencing")
+    mem_after = torch.cuda.memory_allocated()
+    print("Model memory usage: {} ( {} MB ) ".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024) ))
+    # number of parameters
+    print("========= number of parameters ==========")
+    total_params = get_parameter_number(model)["Total"]
+    trainale_params = get_parameter_number(model)["Trainable"]
+    print(f"Total number of parameters: {total_params}")
+    print(f"Trainable number of parameters: {trainale_params}")
+    print(f"Estimated model size: {total_params * 4 / (1024 ** 2)} MB = {total_params * 4 / (1024 ** 2) / 1024 } GB" )
+    
+
     optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
- 
-    profile_step = 5
-    print_profile= True
-    prof = FlopsProfiler(model)
-    for step in range(10):
-        # start profiling at training step "profile_step"
-        if step == profile_step:
-            prof.start_profile()
-        # foward 
-        trains, labels = next(train_iter)   
-        outputs = model(trains)
-        loss = F.cross_entropy(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        # end profiling and print output
-        if step == profile_step: # if using multi nodes, check global_rank == 0 as well
-            prof.stop_profile()
-            flops = prof.get_total_flops()
-            macs = prof.get_total_macs()
-            params = prof.get_total_params()
-            if print_profile:
-                prof.print_model_profile(profile_step=profile_step)
-            prof.end_profile()
+
+    # profile memory
+    if  config.train == False:
+        print("========= Start inferencing =========")
+        model.eval()
+        with torch.no_grad():
+            mem_before = torch.cuda.memory_allocated()
+            trains, labels = next(train_iter) 
+            outputs = model(trains)
+            mem_after = torch.cuda.memory_allocated()
+            print("Forward memory usage: {} ( {} MB )  ({} GB )".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024)  , (mem_after-mem_before) /(1024*1024*1024) ))
+            print( "Max Memory {} MB ({} GB ) ".format(torch.cuda.max_memory_allocated( config.device)/(1024*1024), (torch.cuda.max_memory_allocated( config.device)/(1024*1024*1024)) ))
+
+    else:
+        print("========= Start training =========")
+        gradient_memory = trainale_params * 4 / (1024 ** 2)  # float32 storage
+        print(f"Estimated gradient memory usage: {gradient_memory} MB , {gradient_memory / 1024} GB")
+    
+        for i in range (3):
+            optimizer.zero_grad()
+            mem_before = torch.cuda.memory_allocated()
+            trains, labels = next(train_iter) 
+            outputs = model(trains)
+            loss = F.cross_entropy(outputs, labels)
+            mem_after = torch.cuda.memory_allocated()
+            print("Forward memory usage: {} ( {} MB )  ({} GB )".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024)  , (mem_after-mem_before) /(1024*1024*1024) ))
+            mem_before = torch.cuda.memory_allocated()
+            loss.backward()
+            optimizer.step()
+            mem_after = torch.cuda.memory_allocated()
+            print("Backward memory usage: {} ( {} MB )  ({} GB )".format( mem_after-mem_before , (mem_after-mem_before) /(1024*1024), (mem_after-mem_before) /(1024*1024*1024) ))
+            print( "Max Memory {} MB ({} GB ) ".format(torch.cuda.max_memory_allocated( config.device)/(1024*1024), (torch.cuda.max_memory_allocated( config.device)/(1024*1024*1024)) ))
+        
+        # profile flops
+        profile_step = 5
+        print_profile= True
+        prof = FlopsProfiler(model)
+        for step in range(10):
+            # start profiling at training step "profile_step"
+            if step == profile_step:
+                prof.start_profile()
+            # foward 
+            trains, labels = next(train_iter)   
+            outputs = model(trains)
+            loss = F.cross_entropy(outputs, labels)
+            # end profiling and print output
+            if step == profile_step: # if using multi nodes, check global_rank == 0 as well
+                prof.stop_profile()
+                flops = prof.get_total_flops()
+                macs = prof.get_total_macs()
+                params = prof.get_total_params()
+                if print_profile:
+                    prof.print_model_profile(profile_step=profile_step)
+                prof.end_profile()
+            loss.backward()
+            optimizer.step()

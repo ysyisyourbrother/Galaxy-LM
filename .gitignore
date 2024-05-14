@@ -1,4 +1,5 @@
 # bin
+
 *.bin
 *.ipynb
 tmp/*
@@ -197,11 +198,13 @@ galaxy/llama/output/
 exclude-file.txt
 galaxy/moe/res_init.txt
 galaxy/moe/res.txt
-test_t5.py
-1.py
 test_memory.py
 rsync.sh
 profile_flpos_t5.py
 profile_flpos_bart.py
 profile_memory.py
 profile_memory_bart.py
+test_profiler.py
+#PAC
+galaxy/PAC/runs/*
+galaxy/PAC/outputs/*

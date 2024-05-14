@@ -29,7 +29,7 @@ X 执行 copy to all -- ATT 结束 reduce scatter --> CON 结束 all gather --> 
 X--ATT (TP) -- CON 1 (SP) -- MLP (SP) -- CON 2 (SP) <br>
 X copy to all -- ATT 结束 reduce scatter -- CON -- MLP --> CON 结束 all gather --> ATT .... <br>
 
-### scriptes
+### scripts
 
 `config`: `train_config/bert`
 

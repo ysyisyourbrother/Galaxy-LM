@@ -919,7 +919,8 @@ def _patch_functionals():
     # embedding
     F.embedding = wrapFunc(F.embedding, _embedding_flops_compute)
 
-    # attn
+    # attn TODO: nano cuda 10.2 支持的torch 版本不行 
+    # AttributeError: module 'torch.nn.functional' has no attribute 'scaled_dot_product_attention'   
     F.scaled_dot_product_attention = wrapFunc(F.scaled_dot_product_attention, _attn_flops_compute)
 
 

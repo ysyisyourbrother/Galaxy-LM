@@ -29,14 +29,14 @@ class Model(nn.Module):
             self.base_model = BertModel(config)
         modify_model_for_peft(self.base_model, config)
         # 最后用一个全连接层将提取到的特征转化为num_class个值
-        self.fc = nn.Linear(config.hidden_size, config.num_classes)
+        self.lm_head = nn.Linear(config.hidden_size, config.num_classes)
 
     def forward(self, x):
         # x: (token_ids, seq_len, mask)
         context = (x[0]).to(self.config.device)
         mask = (x[2]).to(self.config.device)
         pooled = self.base_model(context, attention_mask=mask)
-        out = self.fc(pooled)
+        out = self.lm_head(pooled)
         return out
 
 
@@ -72,7 +72,7 @@ if __name__ == '__main__':
     if config.train:
         model.train()
         print('number of bert parameters:', get_parameter_number(model.base_model))
-        print('number of fc parameters:', get_parameter_number(model.fc))
+        print('number of lm_head parameters:', get_parameter_number(model.lm_head))
         print("Start training")
     else:
         model.eval()
