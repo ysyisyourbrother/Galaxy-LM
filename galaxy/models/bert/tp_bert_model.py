@@ -81,7 +81,6 @@ class TPBertAttention(nn.Module):
         key_layer = self.transpose_for_scores(mixed_key_layer)
         # [bs, seq_len, hidden_size] -> [bs, num_att_head//tp_group, seq_len, att_head_size]
         value_layer = self.transpose_for_scores(mixed_value_layer)
-
         # 计算Q*K
         # [bs, num_att_head, seq_len, att_head_size] -> [bs, num_att_head//tp_group, seq_len, seq_len]
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
@@ -90,7 +89,6 @@ class TPBertAttention(nn.Module):
         attention_scores = attention_scores + attention_mask
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
-
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)
@@ -113,8 +111,6 @@ class TPBertAttention(nn.Module):
             return  reduce_scatter_for_tp_to_sp(multi_attention_output, self.config.seq_scatter_list)
         else:
             raise NotImplementedError("con_parallel_method should be SP or None")
-            
- 
 
 class TPBertMLP(nn.Module):
     def __init__(self, config):

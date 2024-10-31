@@ -2,6 +2,15 @@ from galaxy.activations.utils import get_activation
 import torch.nn as nn
 from galaxy.loralib.utils import mark_only_lora_as_trainable
 
+def get_parameter_number_of_name(model, name):
+        # mlp para:
+    num = 0
+    total_num = sum(p.numel() for p in model.parameters())
+    for n, p in model.named_parameters():
+        if  name  in n:
+            num +=  p.numel()
+    print("{} in model: {} , {} of totel para".format(name,num, num/total_num*100 ))
+
 def get_parameter_number(model):
     total_num = sum(p.numel() for p in model.parameters())
     trainable_num = sum(p.numel() for p in model.parameters() if p.requires_grad)

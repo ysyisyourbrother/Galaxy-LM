@@ -54,33 +54,59 @@ class PPLlamaModel(nn.Module):
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
         inputs_embeds = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        use_cache: Optional[bool] = None,
     ) :
+        use_cache = use_cache if use_cache is not None else self.config.use_cache
+
         batch_size = self.config.batch_size
         seq_length =  self.config.pad_size
+        # with past key values
+        seq_length_with_past = seq_length
+        past_key_values_length = 0
+        if past_key_values is not None:
+            past_key_values_length = past_key_values[0][0].shape[2]
+            seq_length_with_past = seq_length_with_past + past_key_values_length
         attention_mask = torch.ones(
-            (batch_size, 1, seq_length, seq_length),  device= self.config.device
+            (batch_size, 1, seq_length_with_past, seq_length_with_past),  device= self.config.device
         )# [bs, 1, seq, seq]
         if self.config.is_first_stage:
             assert self.embed_tokens != None
             inputs_embeds = self.embed_tokens(input_ids)#[bs,seq,hidden_size]
         assert(inputs_embeds is not None)
         hidden_states = inputs_embeds
+        next_decoder_cache = () if use_cache else None
         for idx, decoder_layer in enumerate(self.layers):
+            past_key_value = past_key_values[idx] if past_key_values is not None else None
             layer_outputs = decoder_layer(
                 hidden_states,
                 attention_mask=attention_mask,
-                past_key_value=None,
+                past_key_value=past_key_value,
                 output_attentions=False,
-                use_cache=False,
+                use_cache=use_cache,
             )
-            hidden_states = layer_outputs 
+            hidden_states = layer_outputs[0]
+            if use_cache:
+                next_decoder_cache += (layer_outputs[1],)
         hidden_states = self.norm(hidden_states)
-        # pool
-        if self.config.is_last_stage:
-            pooled_output = hidden_states[:, 0]
-            return pooled_output
-        else:
-            return hidden_states
+        next_cache = next_decoder_cache if use_cache else None # 是元组 
+        
+        
+        #  len(next_decoder_cache)=len(self.layers)  
+        #  len(next_decoder_cache[0]) = 2  k matrix,v  matrix respectively
+        #  next_decoder_cache[0][0].shape = [bs,  num_head, seq_len, head_dim]
+        #  next_decoder_cache[0][1].shape = [bs,  num_head, seq_len, head_dim]
+        print("hidden_states.shape:", hidden_states.shape)
+        print(" len(next_decoder_cache):",  len(next_decoder_cache))
+        print(" len(next_decoder_cache[0]):",  len(next_decoder_cache[0]))
+        print("next_decoder_cache[0][0].shape:", next_decoder_cache[0][0].shape)
+        return (hidden_states, next_cache)
+        # # pool
+        # if self.config.is_last_stage:
+        #     pooled_output = hidden_states[:, 0]
+        #     return pooled_output
+        # else:
+        #     return hidden_states
 
 
 
@@ -97,24 +123,29 @@ class  StageModel(nn.Module):
         if self.config.is_first_stage: # 第一个stage
             context = (x[0]).to(self.config.device)
             # mask = (x[2]).to(self.config.device)
-            hidden_states= self.base_model(
+            outputs = self.base_model(
             input_ids=context,
             attention_mask=None,
             inputs_embeds = None
             )
-            return hidden_states
+            hidden_states = outputs[0]
+            return  hidden_states
         elif self.config.is_last_stage: #最后一个stage 经过分类层
-            pooled = self.base_model(
+            
+            outputs = self.base_model(
             input_ids=None, 
             attention_mask=None,
             inputs_embeds = x,
             )
-            out = self.lm_head(pooled)
+            hidden_states = outputs[0]
+            pooled_output = hidden_states[:, 0]
+            out = self.lm_head(pooled_output)
             return out
         else: #中间stage
-            hidden_states= self.base_model(
+            outputs= self.base_model(
             input_ids=None, 
             attention_mask=None,
             inputs_embeds = x,
             )
+            hidden_states = outputs[0]
             return hidden_states

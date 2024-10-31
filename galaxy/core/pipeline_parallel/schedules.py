@@ -19,13 +19,16 @@ class PipelineRuntime():
         self.tensors = []                   # 每一个元素是一个字典，字典里记录输入和输出位置的张量值,目前只支持单输入单输出
         self.loss_func = loss_func
         self.train_iter = train_iter        # training dataloader
-        self.optimizer = optimizer(list(self.parameters()), lr=lr)
-
+        if  self.config.train:
+            self.optimizer = optimizer(list(self.parameters()), lr=lr)
+        else:
+            self.optimizer = None
         self.num_microbatches = config.num_microbatches # 一个sync-round内micro-batch总数
         self.num_forward_micro_batch = 0    # 统计执行了多少个micro-batch的前向传播
         self.num_backward_micro_batch = 0
 
         self.training_iteration = 0     # 统计一共执行了多少次sync-round
+        self.inference_iteration = 0 # 统计一共执行了多少次inference
 
     def parameters(self):
         parameter_iterators = []
@@ -93,9 +96,10 @@ class PipelineRuntime():
         if self.stage == self.total_stage - 1:
             output = self.model(fw_input)
             # TODO: 怎么把label传送到最后一个stage
-            labels = torch.ones(output.shape[0]).cuda().long()
-            loss = self.loss_func(output, labels)
-            self.tensors[-1]["loss"] = loss 
+            if self.config.train:
+                labels = torch.ones(output.shape[0]).cuda().long()
+                loss = self.loss_func(output, labels)
+                self.tensors[-1]["loss"] = loss 
 
         # 不是最后一个stage，正常执行前向传播
         else:
@@ -143,7 +147,17 @@ class PipelineRuntime():
         self.send_tensors_backward(input_gradient)
         print(f"finish backward of microbatch {self.num_backward_micro_batch}")
 
-
+    def forward_pipelining(self):
+        # 同时注入多个micro-batch进入pipeline
+        for mb_id in range(self.config.num_microbatches):
+            # 如果是第一个stage需要生成数据
+            if self.stage == 0: 
+                input_sample = next(self.train_iter)
+                self.run_forward(input_sample)
+            else:
+                self.run_forward()
+        self.inference_iteration += 1
+        print(f"Finish {self.inference_iteration}-th iteration!")
     def forward_backward_pipelining(self):
         """Gpipe流水线并行(没有all-reduce和1F1B)
         """

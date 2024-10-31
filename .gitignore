@@ -8,7 +8,8 @@ pp_t5_com.py
 # Dataset
 dataset/*
 !README.md
-
+#exp
+galaxy_exp_journal/*
 # script
 sync.sh
 galaxy/llama/scripts/*

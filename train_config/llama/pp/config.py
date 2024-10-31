@@ -87,7 +87,7 @@ class LlamaConfig():
         self.is_first_stage = None
         self.is_last_stage = None
         self.num_pp_hidden_layers = None 
-         
+    
     def load_from_json(self,config_file):
         if not os.path.exists(config_file):
             raise FileNotFoundError("config file: {} not found".format(config_file))
@@ -99,7 +99,7 @@ class LlamaConfig():
                     setattr(self, key, value)
                 else:
                     print(f"Ignoring unknown attribute: {key}")
-        self.check_adapter_config()
+        self.check_config()
 
     def print_config(self):
         for k,v in self.__dict__.items():
@@ -120,29 +120,41 @@ class LlamaConfig():
         print("="*20)
         print("== update PP stage config \n== stage={}\n, total_stage={}\n, num_pp_hidden_layers={}".format(self.stage, self.total_stage, self.num_pp_hidden_layers))
         print("="*20)
-    def check_adapter_config(self):
+        
+    def check_config(self):
+        if self.train == False:
+            assert self.full_model == True
+        if self.train == True:
+            assert self.use_cache == False
         if self.use_lora :
             assert self.lora_dim > 0
         if self.use_adapter:
             assert self.adapter_reduction_dim > 0
         if self.use_side or self.use_side_only:
             assert self.side_reduction_factor > 0
-        #full / lora / adapter / side 只能一个true
+        # full / lora / adapter / side 只能一个true
         true_count = sum([1 for value in [self.use_lora, 
                                       self.use_adapter,
                                       self.use_side,
                                       self.use_side_only,
                                       self.full_model] if value])
         assert true_count == 1
-        print("========== check adapter config ==========")
-        if self.use_lora:
-            print("use lora")
-        if self.use_adapter:
-            print("use adapter")
-        if self.use_side:
-            print("use side")
-        if self.full_model:
-            print("full model")
-        if self.use_side_only:
-            print("use side only")
-        print("==========                       ==========")
+        if self.train:
+            
+            if self.use_lora:
+                print("use lora")
+            if self.use_adapter:
+                print("use adapter")
+            if self.use_side:
+                print("use side")
+            if self.full_model:
+                print("full model")
+            if self.use_side_only:
+                print("use side only")
+        
+        else:
+        
+            if self.use_cache:
+                print("use cache")
+            else:
+                print("not use cache")

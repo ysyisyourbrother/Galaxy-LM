@@ -1,0 +1,19 @@
+{
+   
+    "train": false,
+    "device": "cuda",
+    "num_epochs": 1,
+    "batch_size": 1,
+
+    "model_type":"llama",
+    "hidden_size": 4096,
+    "intermediate_size": 11008,
+    "num_hidden_layers":  1,
+    "num_attention_heads":  32,
+    "max_position_embeddings":    2048,
+    "type_vocab_size": 2,
+    "vocab_size": 32000,
+    "full_model": true,
+    "use_cache":true,
+    "pad_size" :       1
+}

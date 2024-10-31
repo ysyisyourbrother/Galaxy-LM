@@ -48,19 +48,38 @@ if __name__ == '__main__':
         print("Start inferencing")
         
     # Prepare PipelineRuntime
-    runtime = PipelineRuntime(config, 
-                              model, 
-                              loss_func=F.cross_entropy, 
-                              train_iter=train_iter, 
-                              optimizer=torch.optim.SGD, 
-                              lr=0.01, 
-                              if_cuda=True)
-    start_time = time.time()
-    #TODO: train_iter 会用完
-    for i in range(config.num_iterations):
-        runtime.forward_backward_pipelining()
-    print("Finish...")
-    time_usage = get_time_dif(start_time)
-    print(time_usage)
-    print(f"{time_usage.seconds} (seconds)")
+    if config.train:
+        runtime = PipelineRuntime(config, 
+                                model, 
+                                loss_func=F.cross_entropy, 
+                                train_iter=train_iter, 
+                                optimizer=torch.optim.SGD, 
+                                lr=0.01, 
+                                if_cuda=True)
+        start_time = time.time()
+        #TODO: train_iter 会用完
+        for i in range(config.num_iterations):
+            runtime.forward_backward_pipelining()
+        print("Finish...")
+        time_usage = get_time_dif(start_time)
+        print(time_usage)
+        print(f"{time_usage.seconds} (seconds)")
+    else:
+        print("Start inferencing")
+        runtime = PipelineRuntime(config, 
+                                model, 
+                                loss_func= None, 
+                                train_iter=train_iter, 
+                                optimizer= None, 
+                                lr=None,
+                                if_cuda=True)
+        start_time = time.time()
+        for i in range(config.num_iterations):
+            runtime.forward_pipelining()
+        print("Finish...")
+        time_usage = get_time_dif(start_time)
+        print(time_usage)
+        print(f"{time_usage.seconds} (seconds)")
     get_max_memory(config)
+    
+    time.sleep(10)

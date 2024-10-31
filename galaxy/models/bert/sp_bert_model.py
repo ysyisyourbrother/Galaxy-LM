@@ -72,7 +72,7 @@ class SPBertAttention(nn.Module):
         mixed_key_layer = self.key(hidden_states)
         # [bs, seq_len//sp_group, hidden_size] -> [bs, seq_len//sp_group, hidden_size]
         mixed_value_layer = self.value(hidden_states)
-
+        print("mixed_query_layer shape {} ,  mixed_key_layer {}".format(mixed_query_layer.shape, mixed_key_layer.shape))
         # 插入通信原语：K和V矩阵 all-gather
         # [bs, seq_len//sp_group, hidden_size] -> [bs, seq_len, hidden_size]
         gather_key_layer = gather_from_sequence_parallel_region(mixed_key_layer, False,
@@ -80,7 +80,7 @@ class SPBertAttention(nn.Module):
         # [bs, seq_len//sp_group, hidden_size] -> [bs, seq_len, hidden_size]
         gather_value_layer = gather_from_sequence_parallel_region(mixed_value_layer, False,
                                                                   self.config.seq_scatter_list)
-
+        print("gather_key_layer shape {} ,  gather_value_layer {}".format(gather_key_layer.shape, gather_value_layer.shape))
         # 调整QKV矩阵的shape，使其满足Multi-head Attention形式
         # [bs, seq_len//sp_group, hidden_size] -> [bs, num_att_head, seq_len//sp_group, att_head_size]
         query_layer = self.transpose_for_scores(mixed_query_layer)

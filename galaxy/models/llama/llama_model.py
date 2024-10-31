@@ -327,7 +327,7 @@ class LlamaDecoderLayer(nn.Module):
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
-    ):
+    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -347,7 +347,12 @@ class LlamaDecoderLayer(nn.Module):
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
-        return hidden_states
+        
+        outputs = (hidden_states,)
+        if use_cache:
+            outputs += (present_key_value,)
+
+        return outputs
 
 
 
@@ -355,6 +360,7 @@ class LlamaModel(nn.Module):
     def __init__(self, config):
         super(LlamaModel, self).__init__()
         self.config = config
+        
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
@@ -394,25 +400,43 @@ class LlamaModel(nn.Module):
         self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        use_cache: Optional[bool] = None,
     ) :
+        #TODO: check config cache
+        use_cache = use_cache if use_cache is not None else self.config.use_cache
+
         batch_size, seq_length = input_ids.shape # [bs,seq]
         inputs_embeds = self.embed_tokens(input_ids)#[bs,seq,hidden_size]
+        # with past key values
+        seq_length_with_past = seq_length
+        past_key_values_length = 0
+        if past_key_values is not None:
+            past_key_values_length = past_key_values[0][0].shape[2]
+            seq_length_with_past = seq_length_with_past + past_key_values_length
         attention_mask = torch.ones(
-            (batch_size, 1, seq_length, seq_length),  device= self.config.device
+            (batch_size, 1, seq_length_with_past, seq_length_with_past),  device= self.config.device
         )# [bs, 1, seq, seq]
         hidden_states = inputs_embeds
+        
+        next_decoder_cache = () if use_cache else None
         for idx, decoder_layer in enumerate(self.layers):
+            past_key_value = past_key_values[idx] if past_key_values is not None else None
             layer_outputs = decoder_layer(
                 hidden_states,
                 attention_mask=attention_mask,
-                past_key_value=None,
+                past_key_value=past_key_value,
                 output_attentions=False,
-                use_cache=False,
+                use_cache=use_cache,
             )
-
-            hidden_states = layer_outputs 
+            hidden_states = layer_outputs[0]
+            if use_cache:
+                next_decoder_cache += (layer_outputs[1],)
         hidden_states = self.norm(hidden_states)
-        # pool
-        pooled_output = hidden_states[:, 0]
-        return pooled_output
+        #  len(next_decoder_cache)=len(self.layers)  
+        #  len(next_decoder_cache[0]) = 2  k matrix,v  matrix respectively
+        #  next_decoder_cache[0][0].shape = [bs,  num_head, seq_len, head_dim]
+        #  next_decoder_cache[0][1].shape = [bs,  num_head, seq_len, head_dim]
+        next_cache = next_decoder_cache if use_cache else None # 是元组 
+        return (hidden_states, next_cache)
 

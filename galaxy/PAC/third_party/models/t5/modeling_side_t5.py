@@ -936,12 +936,11 @@ class T5Stack(T5PreTrainedModel):
         config.train_task_adapters = config.train_task_adapters and\
                                      valid_task_adapter_layer_id and\
                                      add_task_adapter
-        #print("### config for layer ", layer_id, " is task, lang ", config.train_task_adapters, config.train_lang_adapters)
         return config
         #################################################### 
 
 
-    @add_start_docstrings(PARALLELIZE_DOCSTRING)
+    # @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
         # Check validity of device_map
         self.device_map = (
@@ -981,7 +980,7 @@ class T5Stack(T5PreTrainedModel):
         if self.is_decoder:
             self.cross_side_downsamples = self.cross_side_downsamples.to(self.last_device)
 
-    @add_start_docstrings(PARALLELIZE_DOCSTRING)
+    # @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def deparallelize(self):
         self.model_parallel = False
         self.device_map = None
@@ -1051,7 +1050,6 @@ class T5Stack(T5PreTrainedModel):
                 inputs_embeds = torch.cat([self.prefix_emb.unsqueeze(0).repeat(inputs_embeds.shape[0], 1, 1), inputs_embeds], dim=1) #bsz, seqlen, dim
                 input_shape = inputs_embeds.size()[:-1]
             ######################################
-       
 
         batch_size, seq_length = input_shape
         # required mask seq length can be calculated via length of past
@@ -1486,10 +1484,10 @@ num_heads)`.
 """
 
 
-@add_start_docstrings(
-    "The bare T5 Model transformer outputting raw hidden-states" "without any specific head on top.",
-    T5_START_DOCSTRING,
-)
+# @add_start_docstrings(
+#     "The bare T5 Model transformer outputting raw hidden-states" "without any specific head on top.",
+#     T5_START_DOCSTRING,
+# )
 class T5Model(T5PreTrainedModel):
     _keys_to_ignore_on_load_missing = [
         r"encoder\.embed_tokens\.weight",
@@ -1521,7 +1519,7 @@ class T5Model(T5PreTrainedModel):
         self.model_parallel = False
         self.device_map = None
 
-    @add_start_docstrings(PARALLELIZE_DOCSTRING)
+    # @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
         self.device_map = (
             get_device_map(len(self.encoder.block), range(torch.cuda.device_count()))
@@ -1533,7 +1531,7 @@ class T5Model(T5PreTrainedModel):
         self.decoder.parallelize(self.device_map)
         self.model_parallel = True
 
-    @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
+    # @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
     def deparallelize(self):
         self.encoder.deparallelize()
         self.decoder.deparallelize()
@@ -1565,8 +1563,8 @@ class T5Model(T5PreTrainedModel):
         for layer, heads in heads_to_prune.items():
             self.encoder.layer[layer].attention.prune_heads(heads)
 
-    @add_start_docstrings_to_model_forward(T5_INPUTS_DOCSTRING)
-    @replace_return_docstrings(output_type=Seq2SeqModelOutput, config_class=_CONFIG_FOR_DOC)
+    # @add_start_docstrings_to_model_forward(T5_INPUTS_DOCSTRING)
+    # @replace_return_docstrings(output_type=Seq2SeqModelOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         input_ids=None,
@@ -1668,7 +1666,7 @@ class T5Model(T5PreTrainedModel):
         )
 
 
-@add_start_docstrings("""T5 Model with a `language modeling` head on top. """, T5_START_DOCSTRING)
+# @add_start_docstrings("""T5 Model with a `language modeling` head on top. """, T5_START_DOCSTRING)
 class T5ForConditionalGeneration(SideGenerationMixin, T5PreTrainedModel):
     _keys_to_ignore_on_load_missing = [
         r"encoder\.embed_tokens\.weight",
@@ -1854,7 +1852,7 @@ class T5ForConditionalGeneration(SideGenerationMixin, T5PreTrainedModel):
       set_phm_rule(self.decoder)
     ###########################################################
 
-    @add_start_docstrings(PARALLELIZE_DOCSTRING)
+    # @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
         self.device_map = (
             get_device_map(len(self.encoder.block), range(torch.cuda.device_count()))
@@ -1867,7 +1865,7 @@ class T5ForConditionalGeneration(SideGenerationMixin, T5PreTrainedModel):
         self.lm_head = self.lm_head.to(self.decoder.first_device)
         self.model_parallel = True
 
-    @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
+    # @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
     def deparallelize(self):
         self.encoder.deparallelize()
         self.decoder.deparallelize()
@@ -1898,8 +1896,8 @@ class T5ForConditionalGeneration(SideGenerationMixin, T5PreTrainedModel):
     def get_decoder(self):
         return self.decoder
 
-    @add_start_docstrings_to_model_forward(T5_INPUTS_DOCSTRING)
-    @replace_return_docstrings(output_type=Seq2SeqLMOutput, config_class=_CONFIG_FOR_DOC)
+    # @add_start_docstrings_to_model_forward(T5_INPUTS_DOCSTRING)
+    # @replace_return_docstrings(output_type=Seq2SeqLMOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         input_ids=None,
@@ -1921,27 +1919,6 @@ class T5ForConditionalGeneration(SideGenerationMixin, T5PreTrainedModel):
         return_dict=None,
         task=None
     ):
-        print("==========================================")
-        print("input_ids", input_ids.shape)
-        if attention_mask is not None:
-            print("attention_mask", attention_mask.shape)
-        if decoder_attention_mask is not None:
-            print("decoder_attention_mask", decoder_attention_mask.shape)
-        if head_mask is not None:
-            print("head_mask", head_mask.shape)
-        if decoder_head_mask is not None:
-            print("decoder_head_mask", decoder_head_mask.shape)
-        if cross_attn_head_mask is not None:
-            print("cross_attn_head_mask", cross_attn_head_mask.shape)
-        if encoder_outputs is not None:
-            print("encoder_outputs", encoder_outputs[0].shape)
-        if inputs_embeds is not None:
-            print("inputs_embeds", inputs_embeds.shape)
-        if decoder_inputs_embeds is not None:
-            print("decoder_inputs_embeds", decoder_inputs_embeds.shape)
-        if labels is not None:
-            print("labels", labels.shape)
-        print("==========================================")
 
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
@@ -2247,10 +2224,10 @@ class T5ForConditionalGeneration(SideGenerationMixin, T5PreTrainedModel):
         return reordered_decoder_past
 
 
-@add_start_docstrings(
-    "The bare T5 Model transformer outputting encoder's raw hidden-states" "without any specific head on top.",
-    T5_START_DOCSTRING,
-)
+# @add_start_docstrings(
+#     "The bare T5 Model transformer outputting encoder's raw hidden-states" "without any specific head on top.",
+#     T5_START_DOCSTRING,
+# )
 class T5EncoderModel(T5PreTrainedModel):
     authorized_missing_keys = [
         r"encoder\.embed_tokens\.weight",
@@ -2271,7 +2248,7 @@ class T5EncoderModel(T5PreTrainedModel):
         self.model_parallel = False
         self.device_map = None
 
-    @add_start_docstrings(PARALLELIZE_DOCSTRING)
+    # @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
         self.device_map = (
             get_device_map(len(self.encoder.block), range(torch.cuda.device_count()))
@@ -2282,7 +2259,7 @@ class T5EncoderModel(T5PreTrainedModel):
         self.encoder.parallelize(self.device_map)
         self.model_parallel = True
 
-    @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
+    # @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
     def deparallelize(self):
         self.encoder.deparallelize()
         self.encoder = self.encoder.to("cpu")
@@ -2308,8 +2285,8 @@ class T5EncoderModel(T5PreTrainedModel):
         for layer, heads in heads_to_prune.items():
             self.encoder.layer[layer].attention.prune_heads(heads)
 
-    @add_start_docstrings_to_model_forward(T5_ENCODER_INPUTS_DOCSTRING)
-    @replace_return_docstrings(output_type=BaseModelOutput, config_class=_CONFIG_FOR_DOC)
+    # @add_start_docstrings_to_model_forward(T5_ENCODER_INPUTS_DOCSTRING)
+    # @replace_return_docstrings(output_type=BaseModelOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         input_ids=None,

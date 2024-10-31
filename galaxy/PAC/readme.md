@@ -34,6 +34,6 @@ bash scripts/t5base/side.sh 0 rte # side tuning
 
 - 第一个参数: 选择 gpu id
 - 第二个参数: 选择 task name [rte cola sst mrpc qqp stsb sst2 qnli mnli]
-- `.sh` 文件中需要修改权重路径
+- `.sh` 文件中需要修改权重路径 ( `.sh`内修改对应 `.json`文件参数)
 - 设置 epoch: `galaxy/PAC/scripts/env.sh`
 - 结果路径: `galaxy/PAC/all_output_logs`

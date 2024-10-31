@@ -606,7 +606,7 @@ def main():
         elif adapter_args.create_side_lm:
             from  third_party.models.t5.modeling_side_logit_t5 import T5ForConditionalGeneration
         else:
-            from  third_party.models.t5.modeling_side_t5 import T5ForConditionalGeneration
+            from  third_party.models.t5.modeling_side_t5 import T5ForConditionalGeneration # side transformer
     elif adapter_args.lit_distillation:
         from  third_party.models.t5.modeling_lit import T5ForConditionalGeneration
     elif adapter_args.train_side_cross_transformer:
@@ -614,7 +614,7 @@ def main():
     elif adapter_args.train_deepsidenet_transformer:
         from  third_party.models.t5.modeling_deepsidenet_t5 import T5ForConditionalGeneration
     else:
-        from  third_party.models.t5.modeling_t5 import T5ForConditionalGeneration
+        from  third_party.models.t5.modeling_t5 import T5ForConditionalGeneration # baseline lora adapter 
 
     model = T5ForConditionalGeneration.from_pretrained(
         model_args.model_name_or_path,

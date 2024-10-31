@@ -4,11 +4,11 @@
     "device": "cuda",
     "num_epochs": 3,
     "batch_size": 4,
-    "pad_size": 32,
+    "pad_size": 10,
     "model_type":"llama",
     "hidden_size": 4096,
     "intermediate_size": 11008,
-    "num_hidden_layers":6,
+    "num_hidden_layers":32,
     "num_attention_heads": 32,
     
     "type_vocab_size": 2,

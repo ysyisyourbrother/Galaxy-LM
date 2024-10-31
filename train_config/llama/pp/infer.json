@@ -1,0 +1,33 @@
+{
+     
+    
+    "train": false,
+    "device": "cuda",
+    "num_epochs": 3,
+    "batch_size": 4,
+    "pad_size": 32,
+    "model_type":"llama",
+    "hidden_size": 4096,
+    "intermediate_size": 11008,
+    "num_hidden_layers":2,
+    "num_attention_heads": 32,
+    "type_vocab_size": 2,
+    "vocab_size": 21128,
+    "init_method": "tcp://127.0.0.1:23000",
+    "distributed_backend": "gloo",
+    "stage_num_hidden_layers_list": [1,1],
+    "num_microbatches": 4,
+    "num_iterations":1,
+    "full_model":true,
+    "use_lora": false,
+    "lora_att_dim":4,
+    "lora_alpha": 32,
+    "lora_dropout": 0.1,
+    "fan_in_fan_out": true,
+    "merge_weights": false,
+    "lora_target_modules":[
+        "q_proj",
+        "v_proj"
+    ],
+    "use_cache": true
+}

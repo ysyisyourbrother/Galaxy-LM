@@ -136,7 +136,6 @@ class BertAttention(nn.Module):
         key_layer = self.transpose_for_scores(mixed_key_layer)
         # [bs, seq_len, hidden_size] -> [bs, num_att_head, seq_len, att_head_size]
         value_layer = self.transpose_for_scores(mixed_value_layer)
-
         # 计算Q*K
         # [bs, num_att_head, seq_len, att_head_size] -> [bs, num_att_head, seq_len, seq_len]
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
